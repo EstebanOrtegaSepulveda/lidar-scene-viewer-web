@@ -171,6 +171,7 @@ details.fx > summary { cursor: pointer; font-size: 12px; color: var(--muted) }
 .mi .v small { display: block; color: var(--muted); font-size: 10px; text-align: right }
 .mi button { padding: 2px 8px }
 .empty { font-size: 12px; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 10px; margin: 0 }
+[hidden] { display: none !important }
 .dlg-back { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgba(10, 10, 14, .55) }
 .dlg { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; box-shadow: 0 16px 48px rgba(0,0,0,.45) }
 .dlg strong { font-size: 15px }
@@ -572,10 +573,10 @@ function renderLayers() {
 
 // ---------- Escaneos guardados en la página ----------
 const LIB = [
-  { name: 'my_scene_corregida.glb', mb: 98.9, nov: true, desc: 'cámaras 1 y 2 con techo, corregida', parts: ['scene7_p0.txt', 'scene7_p1.txt', 'scene7_p2.txt', 'scene7_p3.txt', 'scene7_p4.txt', 'scene7_p5.txt', 'scene7_p6.txt', 'scene7_p7.txt', 'scene7_p8.txt', 'scene7_p9.txt', 'scene7_p10.txt'] },
-  { name: 'Camara 3 (16 oct).glb', mb: 16.8, nov: true, single: true, desc: 'cámara 3, ubicada con el escaneo del 29 oct', parts: ['cam3_p0.txt', 'cam3_p1.txt'] },
-  { name: 'Camara 4 (copia de C3).glb', mb: 16.8, nov: true, single: true, desc: 'copia de la cámara 3 a 11,70 m', parts: ['cam3_p0.txt', 'cam3_p1.txt'] },
-  { name: 'Techo camaras 3 y 4 (28 oct).glb', mb: 19.5, nov: true, single: true, desc: 'techo, ubicado por las chimeneas', parts: ['roof34_p0.txt', 'roof34_p1.txt', 'roof34_p2.txt'] }
+  { name: 'my_scene_corregida.glb', mb: 68.0, nov: true, desc: 'cámaras 1 y 2 con techo, corregida', parts: ['scene8_p0.txt', 'scene8_p1.txt', 'scene8_p2.txt', 'scene8_p3.txt', 'scene8_p4.txt', 'scene8_p5.txt', 'scene8_p6.txt', 'scene8_p7.txt'] },
+  { name: 'Camara 3 (16 oct).glb', mb: 12.0, nov: true, single: true, desc: 'cámara 3, ubicada con el escaneo del 29 oct', parts: ['cam3b_p0.txt', 'cam3b_p1.txt'] },
+  { name: 'Camara 4 (copia de C3).glb', mb: 12.0, nov: true, single: true, desc: 'copia de la cámara 3 a 11,70 m', parts: ['cam3b_p0.txt', 'cam3b_p1.txt'] },
+  { name: 'Techo camaras 3 y 4 (28 oct).glb', mb: 12.8, nov: true, single: true, desc: 'techo, ubicado por las chimeneas', parts: ['roof34b_p0.txt', 'roof34b_p1.txt'] }
 ];
 let libBusy = false;
 // ---------- Correcciones de la escena unida en Polycam (original ↔ corregida) ----------
@@ -624,24 +625,35 @@ function renderLib() {
   }
   
 }
+async function fetchPart(p) {   // cada parte es base64 completo: se decodifica con el navegador (rápido)
+  const r = await fetch(p); if (!r.ok) throw new Error('no se encontró ' + p);
+  const txt = (await r.text()).trim();
+  try { return await (await fetch('data:application/octet-stream;base64,' + txt)).arrayBuffer(); }
+  catch (e) { const bin = atob(txt), c = new Uint8Array(bin.length); for (let q = 0; q < bin.length; q++) c[q] = bin.charCodeAt(q); return c.buffer; }
+}
 async function loadLibItems(items) {
   items = items.filter(it => !layers.some(L => L.src === it.name)); if (!items.length || libBusy) return;
   libBusy = true; renderLib(); let ok = 0, rest = 0;
+  // Descarga todas las partes a la vez (varias en paralelo) y luego arma cada escaneo en orden.
+  const uniq = [...new Set(items.flatMap(it => it.parts))], totalMB = items.reduce((a, it) => a + it.mb, 0) * (uniq.length / items.reduce((a, it) => a + it.parts.length, 0));
+  let doneN = 0; const showDl = () => overlay('Descargando las cámaras…', `${doneN} de ${uniq.length} partes · unos ${nf(totalMB, 0)} MB en total. La primera vez demora; después queda en la memoria del navegador.`);
+  const cache = new Map(), queue = uniq.slice();
+  const worker = async () => { while (queue.length) { const p = queue.shift(); const pr = fetchPart(p); cache.set(p, pr); try { await pr; } catch (e) {} doneN++; showDl(); } };
+  const getPart = p => cache.get(p) || new Promise((res, rej) => { const t = setInterval(() => { const pr = cache.get(p); if (pr) { clearInterval(t); pr.then(res, rej); } }, 50); });
+  showDl(); const pool = Promise.all(Array.from({ length: Math.min(6, uniq.length) }, worker));
   try {
     for (const [k, it] of items.entries()) {
       const tag = items.length > 1 ? ` (${k + 1} de ${items.length})` : '';
       try {
-        const chunks = []; let total = 0;   // cada parte es base64 completo (largo múltiplo de 4): se decodifica por separado
-        for (const [i, p] of it.parts.entries()) { overlay(`Descargando ${it.name}${tag}…`, `Parte ${i + 1} de ${it.parts.length} · ${nf(it.mb, 1)} MB en total.`); const r = await fetch(p); if (!r.ok) throw new Error('no se encontró ' + p);
-          const bin = atob((await r.text()).trim()), c = new Uint8Array(bin.length); for (let q = 0; q < bin.length; q++) c[q] = bin.charCodeAt(q); chunks.push(c); total += c.length; }
+        const cs = await Promise.all(it.parts.map(getPart));
         overlay(`Preparando ${it.name}${tag}…`, 'Leyendo la malla y sus texturas.');
         await new Promise(r => setTimeout(r, 20));
-        const u = new Uint8Array(total); let off = 0; for (const c of chunks) { u.set(c, off); off += c.length; } chunks.length = 0;
+        const total = cs.reduce((a, c) => a + c.byteLength, 0), u = new Uint8Array(total); let off = 0; for (const c of cs) { u.set(new Uint8Array(c), off); off += c.byteLength; }
         const g = await parseGltf(u.buffer, null); const rs = it.single ? [addLayer(it.name, g.scene, { src: it.name, matrix: FIX[it.name] ? new THREE.Matrix4().fromArray(FIX[it.name].corr) : null })].filter(Boolean) : addGltf(it.name, g, { sample: !!it.sample }); if (it.name === FIX_SRC && rs.length && !rs.some(r => r.restored)) applyFix('corr', true);
         if (rs.length) { ok++; if (rs.some(r => r.restored)) rest++; }
       } catch (err) { toast(`No se pudo cargar "${it.name}". ${err.message || ''}`, 6000); }
     }
-  } finally { libBusy = false; overlay(null); renderLib(); }
+  } finally { await pool.catch(() => {}); libBusy = false; overlay(null); renderLib(); }
   commit('cargar escena'); save();
   if (ok) { setView(view); toast(`${ok} ${ok === 1 ? 'escaneo cargado' : 'escaneos cargados'} en ${curScene}` + (rest ? `; ${rest} con la posición y borrados que tenías` : '') + '.'); }
   else if (!layers.length) overlay(`${curScene}: sin capas`, 'Carga las cámaras guardadas en la página, o agrega tus GLB.', true);
