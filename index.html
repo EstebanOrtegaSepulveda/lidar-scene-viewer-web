@@ -1,0 +1,1410 @@
+<title>Escena LiDAR</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: barra superior oscura; a la izquierda el panel Capas con Posición / Rotación / Escala; el visor claro ocupa el resto;
+   botones redondos a la derecha, dos herramientas abajo al centro y todo lo demás en el cajón "Más". Un solo tema: marco oscuro, visor claro. */
+:root {
+  --bg: #17181c; --surface: #1f2026; --raise: #2a2b33; --line: #34353f; --fg: #ecebf0; --muted: #9c9aa6;
+  --stage: #f4f2ee; --ink: #1c1d22; --grid-a: #b9b5ae; --grid-b: #dcd8d1;
+  --accent: #6a5cff; --accent-ink: #ffffff; --tan: #c98f3c; --warn: #f0a24a; --danger: #ff6b6b; --sug: #17a2c7; --mov: #e2730b; --go: #36d17c;
+  --f-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box }
+html, body { height: 100% }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-ui); font-size: 13px; line-height: 1.45; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden }
+
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--raise); color: var(--fg); padding: 6px 11px; font-size: 13px; font-weight: 500 }
+button:hover { border-color: var(--accent) }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, label.file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px }
+button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg) }
+button.primary:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-ink) }
+button:disabled { opacity: .4; cursor: default }
+button.ic { display: inline-grid; place-items: center; padding: 6px 8px; background: none; border-color: transparent }
+button.ic:hover:not(:disabled) { background: var(--raise) }
+input[type=number], input[type=text], select { width: 100%; min-width: 0; font-family: var(--f-num); font-size: 12px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg) }
+select { font-family: var(--f-ui); font-size: 13px }
+input[type=range] { width: 100%; accent-color: var(--danger) }
+
+/* Barra superior */
+.top { display: flex; align-items: center; gap: 10px; padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); min-width: 0 }
+.top h1 { font-size: 15px; font-weight: 600; margin: 0; white-space: nowrap }
+.top h1 span { color: var(--accent) }
+.top .scn { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.top .sp { flex: 1 }
+@media (max-width: 560px) { .top h1, #btnExport { display: none } .top { gap: 6px } }
+
+/* Cuerpo */
+.main { position: relative; display: flex; min-height: 0; min-width: 0 }
+.left { width: 252px; flex: none; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--bg) }
+.left.off { display: none }
+.lhead { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px 6px 14px; font-weight: 600; font-size: 14px }
+.lscroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 8px 8px; display: grid; gap: 6px; align-content: start }
+.layers { display: grid; gap: 2px }
+.layer { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px; align-items: center; padding: 5px 4px 5px 10px; border-radius: 7px; font-size: 12.5px }
+.layer:hover { background: var(--surface) }
+.layer.sel { background: var(--accent); color: var(--accent-ink) }
+.layer .nm { order: 1; border: 0; background: none; padding: 2px 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: inherit; font-family: var(--f-num); font-size: 12px }
+.layer .nm small { display: none }
+.layer .sw { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 6px }
+.layer .sw[style*="var(--line)"] { display: none }
+.layer > span { display: none }
+/* El ojo: la casilla de visibilidad dibujada como icono */
+.layer input[type=checkbox] { order: 2; appearance: none; -webkit-appearance: none; width: 24px; height: 22px; margin: 0; cursor: pointer; border-radius: 5px; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.7 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.7 17.7 0 0 1-2.2 3.1M6.6 6.6C3.6 8.6 2 12 2 12s3.500 7 10 7a9.700 9.700 0 0 0 5.400-1.600M2 2l20 20M9.900 9.900a3 3 0 1 0 4.200 4.200'/%3E%3C/svg%3E") center / 16px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.7 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.7 17.7 0 0 1-2.2 3.1M6.6 6.6C3.6 8.6 2 12 2 12s3.500 7 10 7a9.700 9.700 0 0 0 5.400-1.600M2 2l20 20M9.900 9.900a3 3 0 1 0 4.200 4.200'/%3E%3C/svg%3E") center / 16px no-repeat; opacity: .55 }
+.layer input[type=checkbox]:checked { opacity: 1;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.500-7 10-7 10 7 10 7-3.500 7-10 7S2 12 2 12Z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.500-7 10-7 10 7 10 7-3.500 7-10 7S2 12 2 12Z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E") }
+.layer .del { order: 3; padding: 1px 6px; font-size: 11px; background: none; border-color: transparent; color: inherit; opacity: .55 }
+.layer .del:hover { opacity: 1 }
+.layer .del.arm { background: var(--danger); border-color: var(--danger); color: #fff; opacity: 1 }
+label.file { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer; font-weight: 500; background: var(--surface); border: 1px solid transparent }
+label.file:hover { border-color: var(--accent) }
+label.file input { position: absolute; opacity: 0; width: 1px; height: 1px }
+.prs { border-top: 1px solid var(--line); padding: 10px 10px 12px; display: grid; gap: 6px }
+.prs .pt { font-size: 12px; color: var(--fg); font-weight: 500 }
+.prs #selName { font-family: var(--f-num); font-size: 11px; color: var(--muted); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.tri { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px }
+.tri label { display: flex; align-items: center; gap: 4px; font-family: var(--f-num); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding-left: 7px; min-width: 0 }
+.tri label:focus-within { outline: 2px solid var(--accent); outline-offset: 1px }
+.tri input[type=number] { border: 0; background: none; padding: 6px 4px 6px 0; font-size: 12px; outline: none; text-align: right }
+@media (max-width: 760px) { .left { position: absolute; z-index: 8; left: 0; top: 0; bottom: 0; box-shadow: 8px 0 24px rgba(0,0,0,.35) } }
+
+/* Visor */
+.stage { position: relative; flex: 1; min-width: 0; min-height: 0; background: var(--stage); overflow: hidden; touch-action: none; color: var(--ink) }
+.stage canvas { display: block; width: 100%; height: 100% }
+.stage.cross canvas { cursor: crosshair }
+.pill-dark { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 4px 16px rgba(0,0,0,.18) }
+#btnLayers { position: absolute; left: 12px; top: 12px; z-index: 3; display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; font-weight: 600 }
+.dbar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 6px; padding: 4px 5px 4px 14px; font-size: 12px; white-space: nowrap }
+.dbar span { min-width: 150px }
+.dbar button { border-radius: 999px; padding: 4px 12px; font-size: 12px }
+.hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2; font-size: 12px; padding: 6px 14px 6px 12px; max-width: calc(100% - 230px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px }
+.hint::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--go); flex: none }
+.rtools { position: absolute; top: 12px; right: max(12px, env(safe-area-inset-right, 0px)); z-index: 4; display: grid; gap: 8px; justify-items: end }
+.rb { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; padding: 0; background: var(--bg); color: var(--fg); border: 1px solid var(--line); cursor: pointer; list-style: none }
+.rb::-webkit-details-marker { display: none }
+.rb:hover { border-color: var(--accent) }
+.rb[aria-pressed="true"] { background: var(--fg); color: var(--bg) }
+details.vw { position: relative }
+details.vw[open] > summary, details.vw > summary[aria-pressed="true"] { background: var(--fg); color: var(--bg) }
+.ghl p { margin: 2px 8px 4px; font-size: 11px; opacity: .65 }
+.ghl button { display: flex; align-items: center; gap: 8px; max-width: 260px; overflow: hidden; text-overflow: ellipsis }
+.ghl button::before { content: ''; flex: 0 0 auto; width: 13px; height: 13px; border-radius: 3px; border: 1.5px solid currentColor; opacity: .7 }
+.ghl button[aria-pressed="true"]::before { background: currentColor; opacity: 1 }
+#ghNone { margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0 }
+#ghNone::before { display: none }
+.views { position: absolute; right: 44px; top: 0; display: grid; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 5px; box-shadow: 0 6px 24px rgba(0,0,0,.25) }
+.views button { padding: 5px 12px; font-size: 12px; text-align: left; background: none; border-color: transparent; white-space: nowrap }
+.views button:hover { background: var(--raise) }
+.views button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink) }
+.hud { position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 4px; padding: 5px; z-index: 3 }
+.hud button { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; background: none; border-color: transparent; padding: 7px 14px; white-space: nowrap }
+.hud button:hover { background: var(--raise) }
+.hud button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink) }
+.mbar { position: absolute; left: 50%; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 4px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px 4px 12px; font-family: var(--f-num); font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.18); max-width: calc(100% - 24px); white-space: nowrap }
+.hud button[data-mode="erase"][aria-pressed="true"] { background: var(--danger); color: #1c1d22 }
+#ebar { font-family: var(--f-ui); gap: 10px; padding: 6px 8px 6px 12px; flex-wrap: wrap; justify-content: center; white-space: normal }
+#ebar input[type=range] { width: 130px; margin: 0 }
+#ebar output { font-family: var(--f-num); min-width: 46px }
+#ebar .chk { display: inline-flex; align-items: center; gap: 6px; cursor: pointer }
+#ebar button { border: 1px solid var(--line); font-family: var(--f-ui) }
+#tiltFlag[hidden] + #btnLevel { display: none }
+.mbar input[type=text] { width: 130px; font-family: var(--f-ui); padding: 4px 6px; margin-left: 8px }
+.mbar button { background: none; border-color: transparent; font-family: var(--f-num); font-size: 12px; padding: 5px 8px }
+.mbar button:hover { background: var(--raise) }
+.labels { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden }
+.ml { position: absolute; transform: translate(-50%, -50%); font-family: var(--f-num); font-size: 14px; font-weight: 600; white-space: nowrap; padding: 4px 11px; border-radius: 999px; pointer-events: auto; cursor: pointer;
+  background: #f1d9b0; color: #3a2a10; border: 2px solid var(--tan); font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgba(0,0,0,.28) }
+.ml.sel { background: #d9d3ff; color: #1d1466; border-color: var(--accent) }
+.ml.draft { pointer-events: none; background: #d9d3ff; color: #1d1466; border-color: var(--accent) }
+.pl { position: absolute; transform: translate(6px, -120%); font-family: var(--f-num); font-size: 11px; font-weight: 600; padding: 0 4px; border-radius: 4px; color: #fff }
+.pl.m { background: var(--mov) } .pl.r { background: var(--sug) }
+.scalebar { position: absolute; left: 14px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 2; font-family: var(--f-num); font-size: 11px; color: var(--ink); display: grid; gap: 2px }
+.scalebar .bar { height: 7px; border: 1.5px solid var(--ink); border-top: 0; background: linear-gradient(90deg, var(--ink) 50%, transparent 50%) }
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--stage) 88%, transparent); text-align: center; padding: 24px; z-index: 6; color: var(--ink) }
+.overlay p { margin: 6px 0 12px; color: #5b5963; max-width: 44ch }
+.overlay strong { font-size: 15px }
+.overlay .row { justify-content: center }
+.drop { position: absolute; inset: 10px; border: 2px dashed var(--accent); border-radius: 10px; display: grid; place-items: center; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--stage) 75%, transparent); z-index: 7; pointer-events: none }
+
+/* Cajón "Más" */
+.more { position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 100%); z-index: 9; background: var(--bg); border-left: 1px solid var(--line); box-shadow: -10px 0 30px rgba(0,0,0,.35); display: flex; flex-direction: column; min-height: 0 }
+.mhead { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 8px 16px; font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--line) }
+.mscroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 12px max(12px, env(safe-area-inset-right, 0px)) 16px 12px; display: grid; gap: 10px; align-content: start }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 9px; min-width: 0 }
+.card h2 { margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted) }
+.card button[data-mode][aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink) }
+.card button[data-mode="erase"][aria-pressed="true"] { background: var(--danger); border-color: var(--danger); color: #fff }
+.note { font-size: 12px; color: var(--muted); margin: 0 }
+.flag { font-size: 12px; color: var(--warn); margin: 0 }
+.ok { font-size: 12px; color: var(--sug); margin: 0 }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer }
+.check input { margin-top: 3px }
+.pair { display: grid; grid-template-columns: 1fr 150px; gap: 8px; align-items: center; font-size: 13px }
+.brush { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 13px }
+.brush output { font-family: var(--f-num); font-size: 12px; min-width: 52px; text-align: right }
+.seg { display: grid; grid-template-columns: 1fr 1fr }
+.seg button { border-radius: 0 }
+.seg button:first-child { border-radius: 8px 0 0 8px }
+.seg button:last-child { border-radius: 0 8px 8px 0; border-left: 0 }
+.seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink) }
+details.fx > summary { cursor: pointer; font-size: 12px; color: var(--muted) }
+.fixes { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 12.5px }
+.fixes b { font-family: var(--f-num); font-weight: 600 }
+.lib { display: grid; gap: 4px }
+.li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 12.5px }
+.li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.li small { display: block; color: var(--muted); font-size: 11px }
+.li button { padding: 3px 10px; font-size: 12px }
+.li button.in { color: var(--muted) }
+.mlist { display: grid; gap: 6px }
+.mi { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; gap: 6px; align-items: center; font-size: 13px }
+.mi .n { font-family: var(--f-num); font-size: 12px; color: var(--muted) }
+.mi input { padding: 4px 6px; font-family: var(--f-ui) }
+.mi .v { font-family: var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12px }
+.mi .v small { display: block; color: var(--muted); font-size: 10px; text-align: right }
+.mi button { padding: 2px 8px }
+.empty { font-size: 12px; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 10px; margin: 0 }
+.dlg-back { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgba(10, 10, 14, .55) }
+.dlg { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; box-shadow: 0 16px 48px rgba(0,0,0,.45) }
+.dlg strong { font-size: 15px }
+.dlg p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5 }
+.dlg .row { justify-content: flex-end }
+.toast { position: fixed; left: 50%; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 20; max-width: calc(100% - 32px) }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+
+<header class="top">
+  <h1>Escena <span>LiDAR</span></h1>
+  <span class="scn">Cámaras 1-2-3-4</span><select id="sceneName" hidden aria-hidden="true"><option>Cámaras 1-2-3-4</option></select>
+  <span class="sp"></span>
+  <button type="button" id="btnUndo" class="ic" aria-label="Deshacer" title="Nada que deshacer" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+  <button type="button" id="btnRedo" class="ic" aria-label="Rehacer" title="Nada que rehacer" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+  <button type="button" id="btnExport">Exportar</button>
+  <button type="button" id="btnMore" aria-expanded="false" aria-controls="more">Más</button>
+</header>
+
+<div class="main">
+  <aside class="left" id="left">
+    <div class="lhead"><span>Capas</span><button type="button" class="ic" id="btnCollapse" aria-label="Ocultar el panel de capas" title="Ocultar panel"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg></button></div>
+    <div class="lscroll">
+      <div class="layers" id="layers"></div>
+      <label class="file">+ Agregar<input id="file" type="file" multiple accept=".glb,.gltf,.bin,.jpg,.jpeg,.png,.webp,model/gltf-binary"></label>
+    </div>
+    <div class="prs" style="display:none">
+      <p id="selName">Ninguna capa seleccionada.</p>
+      <span class="pt">Posición</span>
+      <div class="tri"><label>X<input id="px" type="number" step="0.01" aria-label="Posición X"></label><label>Y<input id="py" type="number" step="0.01" aria-label="Posición Y"></label><label>Z<input id="pz" type="number" step="0.01" aria-label="Posición Z"></label></div>
+      <span class="pt">Rotación</span>
+      <div class="tri"><label>X<input id="rx" type="number" step="0.5" aria-label="Rotación X"></label><label>Y<input id="ry" type="number" step="0.5" aria-label="Rotación Y"></label><label>Z<input id="rz" type="number" step="0.5" aria-label="Rotación Z"></label></div>
+      <span class="pt">Escala</span>
+      <div class="tri"><label>XYZ<input id="sc" type="number" step="0.001" min="0.001" aria-label="Escala"></label></div>
+      <p class="flag" id="tiltFlag" hidden></p>
+      <button type="button" id="btnLevel">Quitar inclinación</button>
+    </div>
+  </aside>
+
+  <section class="stage" id="stage" aria-label="Visor 3D">
+    <button type="button" id="btnLayers" class="pill-dark" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>Capas</button>
+    <div class="hint pill-dark" id="hint">Haz clic en dos puntos para medir</div>
+    <div class="dbar pill-dark" id="dbar" hidden><span id="dbarT">Marca el segundo punto</span><button type="button" id="dUndo">Deshacer</button><button type="button" id="dDone" class="primary">Listo</button></div>
+    <div class="rtools">
+      <details class="vw" id="vw">
+        <summary class="rb" aria-label="Vistas" title="Vistas: 3D, planta y elevaciones"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg></summary>
+        <div class="views" role="group" aria-label="Vistas">
+          <button type="button" data-view="3d" aria-pressed="true">3D</button>
+          <button type="button" data-view="planta" aria-pressed="false">Planta</button>
+          <button type="button" data-view="frente" aria-pressed="false">Frente</button>
+          <button type="button" data-view="atras" aria-pressed="false">Atrás</button>
+          <button type="button" data-view="izquierda" aria-pressed="false">Izquierda</button>
+          <button type="button" data-view="derecha" aria-pressed="false">Derecha</button>
+        </div>
+      </details>
+      <button type="button" class="rb" id="rbGrid" aria-pressed="true" aria-label="Mostrar u ocultar la cuadrícula" title="Cuadrícula de 1 m"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9h16M4 15h16M9 4v16M15 4v16"/></svg></button>
+      <button type="button" class="rb" id="rbTint" aria-pressed="false" aria-label="Distinguir capas por color" title="Distinguir capas por color"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="6"/><circle cx="15" cy="15" r="6"/></svg></button>
+      <details class="vw" id="gh">
+        <summary class="rb" id="rbGhost" aria-label="Capas semitransparentes" title="Ver capas semitransparentes"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 3" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></summary>
+        <div class="views ghl" role="group" aria-label="Capas semitransparentes"><p>Semitransparente</p><div id="ghList"></div><button type="button" id="ghNone">Ninguna</button></div>
+      </details>
+      <button type="button" class="rb" id="rbShot" aria-label="Lámina de esta vista" title="Lámina de esta vista (PNG)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4V8Z"/><circle cx="12" cy="13" r="3.500"/></svg></button>
+    </div>
+    <div class="labels" id="labels"></div>
+    <div class="scalebar" id="scalebar" hidden><div class="bar" id="sbBar"></div><span id="sbTxt"></span></div>
+    <div class="drop" id="drop" hidden>Suelta aquí los archivos GLB / GLTF</div>
+    <div class="overlay" id="overlay"><div><strong id="ovTitle">Preparando la escena…</strong><p id="ovText"></p><div class="row"><button type="button" class="primary" id="ovLib" hidden>Cargar las 4 cámaras</button><label class="file" id="ovFile" hidden>Agregar escaneos GLB / GLTF<input id="file2" type="file" multiple accept=".glb,.gltf,.bin,.jpg,.jpeg,.png,.webp,model/gltf-binary"></label></div></div></div>
+    <div class="mbar" id="mbar" hidden><span id="mTotal"></span><input type="text" id="mName" aria-label="Nombre de la medida"><button type="button" id="mDel">Borrar</button></div>
+    <div class="mbar" id="ebar" hidden>
+      <label for="brush">Pincel</label><input id="brush" type="range" min="5" max="100" step="1" value="20"><output id="brushOut">20 cm</output>
+      <label class="chk"><input id="eraseSel" type="checkbox" checked>Solo la capa seleccionada</label>
+      <button type="button" id="btnRestoreE" disabled>Restaurar capa</button>
+    </div>
+    <div class="hud pill-dark" role="group" aria-label="Herramienta">
+      <button type="button" data-mode="move" aria-pressed="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>Mover</button>
+      <button type="button" data-mode="measure" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 17 14-14 4 4L7 21l-4-4Z"/><path d="m8 12 2 2M11 9l2 2M14 6l2 2"/></svg>Medir</button>
+      <button type="button" data-mode="erase" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 21-4-4a2 2 0 0 1 0-3L13 4a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-9 9H7Z"/><path d="m9 8 7 7M12 21h9"/></svg>Borrador</button>
+    </div>
+  </section>
+
+  <aside class="more" id="more" hidden>
+    <div class="mhead"><span>Más herramientas</span><button type="button" class="ic" id="btnMoreX" aria-label="Cerrar">✕</button></div>
+    <div class="mscroll">
+      <div class="card" id="cardExport">
+        <h2>Exportar</h2>
+        <div class="row">
+          <button type="button" id="btnPng" class="primary">Lámina de esta vista (PNG)</button>
+          <button type="button" id="btnViews">Planta + 4 elevaciones (ZIP)</button>
+        </div>
+        <div class="row">
+          <button type="button" id="btnGlb">Escena unida (GLB en ZIP)</button>
+          <button type="button" id="btnCsv">Medidas (CSV)</button>
+        </div>
+        <p class="note">El ZIP trae una lámina por cara, con escala gráfica y la lista de cotas, más el CSV de medidas.</p>
+        <h2 style="margin-top:4px">Proyecto</h2>
+        <div class="row">
+          <button type="button" id="btnSave">Guardar proyecto (.json)</button>
+          <label class="file">Abrir proyecto<input id="projFile" type="file" accept=".json,application/json"></label>
+        </div>
+        <div class="row"><button type="button" id="btnReload">Recuperar capas quitadas</button></div>
+        <p class="note">Si quitaste una capa de las 4 cámaras y ya no puedes deshacer, este botón la vuelve a cargar en su posición.</p>
+      </div>
+
+      <div class="card">
+        <h2>Medidas</h2>
+        <div class="pair"><label for="units">Unidades</label>
+          <select id="units"><option value="m">m</option><option value="cm">cm</option><option value="mm">mm</option></select></div>
+        <div class="mlist" id="mlist"></div>
+        <label class="check"><input id="showM" type="checkbox" checked><span>Mostrar cotas en el visor</span></label>
+        <p class="note">Precisión del LiDAR del teléfono: del orden de 1 a 3 cm. Confirma en terreno las medidas críticas.</p>
+      </div>
+
+      <div class="card">
+        <h2>Alinear por puntos</h2>
+        <div class="row"><button type="button" data-mode="align" aria-pressed="false">Marcar puntos</button><button type="button" id="btnAlign" class="primary" disabled>Aplicar</button><button type="button" id="btnAlignClr" disabled>Limpiar</button></div>
+        <p class="note">Un punto en la capa seleccionada (naranja) y el mismo punto en otra capa (cian). Con 2 pares basta si el giro es solo horizontal.</p>
+        <p class="note" id="alignInfo">0 pares.</p>
+        <p class="note" id="alignRes"></p>
+        <h2 style="margin-top:4px">Escuadrar la escena</h2>
+        <div class="row"><button type="button" data-mode="square" aria-pressed="false">Marcar una pared</button></div>
+        <p class="note">Marca dos puntos a lo largo de una pared: toda la escena gira para dejarla paralela al eje X.</p>
+      </div>
+
+      <p class="note" style="margin:18px 0 4px;opacity:.7">© Esteban Ortega Sepúlveda · Todos los derechos reservados · Prohibida su copia o distribución</p>
+      </div>
+    </div>
+  </aside>
+</div>
+<div hidden>
+  <input id="yawOnly" type="checkbox" checked><input id="tint" type="checkbox"><input id="ghost" type="checkbox">
+  <button type="button" id="btnFloor"></button><button type="button" id="btnFloorAll"></button>
+  <div id="cardFix"><button type="button" id="fixCorr"></button><button type="button" id="fixOrig"></button><p id="fixState"></p></div>
+  <div id="lib"></div><p id="eraseInfo"></p><select id="axis"><option value="free">Distancia directa</option></select>
+</div>
+<div class="dlg-back" id="dlg" hidden>
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgT" aria-describedby="dlgP">
+    <strong id="dlgT"></strong>
+    <p id="dlgP"></p>
+    <label class="check"><input type="checkbox" id="dlgSkip"><span>No volver a preguntar hasta recargar la página</span></label>
+    <div class="row"><button type="button" id="dlgNo">Cancelar</button><button type="button" class="primary" id="dlgOk">Activar</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegmentsGeometry.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineGeometry.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegments2.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/Line2.js"></script>
+<script>
+// Funciones puras: alineación rígida por pares de puntos, ZIP sin compresión, RLE y estimación de piso.
+const SceneMath = (() => {
+  const mean = P => { const c = [0, 0, 0]; for (const p of P) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; } return c.map(v => v / P.length); };
+  // Giro solo alrededor de Y + traslación. Devuelve {angle (rad, convención three: x'=x·cos+z·sin, z'=−x·sin+z·cos), t:[x,y,z]}
+  function alignYaw(P, Q) {
+    const pc = mean(P), qc = mean(Q); let a = 0, b = 0;
+    for (let i = 0; i < P.length; i++) { const px = P[i][0] - pc[0], pz = P[i][2] - pc[2], qx = Q[i][0] - qc[0], qz = Q[i][2] - qc[2];
+      a += qx * px + qz * pz; b += qx * pz - qz * px; }
+    const ang = Math.atan2(b, a), c = Math.cos(ang), s = Math.sin(ang);
+    const rx = pc[0] * c + pc[2] * s, rz = -pc[0] * s + pc[2] * c;
+    return { angle: ang, t: [qc[0] - rx, qc[1] - pc[1], qc[2] - rz] };
+  }
+  // Método de Horn (cuaterniones). Devuelve {q:[x,y,z,w], t:[x,y,z]} con Q ≈ R·P + t
+  function alignRigid(P, Q) {
+    const pc = mean(P), qc = mean(Q), S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    for (let i = 0; i < P.length; i++) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) S[r][c] += (P[i][r] - pc[r]) * (Q[i][c] - qc[c]);
+    const [[xx, xy, xz], [yx, yy, yz], [zx, zy, zz]] = S;
+    const N = [[xx + yy + zz, yz - zy, zx - xz, xy - yx], [yz - zy, xx - yy - zz, xy + yx, zx + xz], [zx - xz, xy + yx, -xx + yy - zz, yz + zy], [xy - yx, zx + xz, yz + zy, -xx - yy + zz]];
+    const { vals, vecs } = jacobi4(N); let best = 0; for (let i = 1; i < 4; i++) if (vals[i] > vals[best]) best = i;
+    let w = vecs[0][best], x = vecs[1][best], y = vecs[2][best], z = vecs[3][best]; const L = Math.hypot(w, x, y, z) || 1; w /= L; x /= L; y /= L; z /= L;
+    const rp = rotQ([x, y, z, w], pc);
+    return { q: [x, y, z, w], t: [qc[0] - rp[0], qc[1] - rp[1], qc[2] - rp[2]] };
+  }
+  function rotQ(q, v) { const [x, y, z, w] = q, [vx, vy, vz] = v;
+    const ix = w * vx + y * vz - z * vy, iy = w * vy + z * vx - x * vz, iz = w * vz + x * vy - y * vx, iw = -x * vx - y * vy - z * vz;
+    return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x]; }
+  function jacobi4(A0) {
+    const A = A0.map(r => r.slice()), V = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]];
+    for (let sweep = 0; sweep < 60; sweep++) { let off = 0; for (let p = 0; p < 4; p++) for (let q = p + 1; q < 4; q++) off += A[p][q] * A[p][q]; if (off < 1e-20) break;
+      for (let p = 0; p < 4; p++) for (let q = p + 1; q < 4; q++) { if (Math.abs(A[p][q]) < 1e-30) continue;
+        const th = (A[q][q] - A[p][p]) / (2 * A[p][q]), t = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1)), c = 1 / Math.sqrt(t * t + 1), s = t * c;
+        for (let k = 0; k < 4; k++) { const akp = A[k][p], akq = A[k][q]; A[k][p] = c * akp - s * akq; A[k][q] = s * akp + c * akq; }
+        for (let k = 0; k < 4; k++) { const apk = A[p][k], aqk = A[q][k]; A[p][k] = c * apk - s * aqk; A[q][k] = s * apk + c * aqk; }
+        for (let k = 0; k < 4; k++) { const vkp = V[k][p], vkq = V[k][q]; V[k][p] = c * vkp - s * vkq; V[k][q] = s * vkp + c * vkq; } } }
+    return { vals: [0, 1, 2, 3].map(i => A[i][i]), vecs: V };
+  }
+  // ZIP sin compresión (método 0), nombres UTF-8.
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(u) { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  function zip(files, now = new Date()) {
+    const enc = new TextEncoder(), parts = [], central = []; let off = 0, cdSize = 0;
+    const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1), date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+    for (const f of files) {
+      const name = enc.encode(f.name), d = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = crc32(d);
+      const h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true); h.setUint16(10, time, true); h.setUint16(12, date, true);
+      h.setUint32(14, crc, true); h.setUint32(18, d.length, true); h.setUint32(22, d.length, true); h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+      parts.push(h.buffer, name, d);
+      const c = new DataView(new ArrayBuffer(46));
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true); c.setUint16(12, time, true); c.setUint16(14, date, true);
+      c.setUint32(16, crc, true); c.setUint32(20, d.length, true); c.setUint32(24, d.length, true); c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+      central.push(c.buffer, name); cdSize += 46 + name.length; off += 30 + name.length + d.length;
+    }
+    const e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+    return [...parts, ...central, e.buffer];
+  }
+  // Tramos de triángulos borrados: [inicio, largo, inicio, largo, …]
+  function rle(rem) { const out = []; for (let i = 0; i < rem.length; i++) if (rem[i]) { let j = i; while (j + 1 < rem.length && rem[j + 1]) j++; out.push(i, j - i + 1); i = j; } return out; }
+  function unrle(runs, n) { const rem = new Uint8Array(n); for (let k = 0; k < runs.length; k += 2) for (let i = runs[k]; i < Math.min(n, runs[k] + runs[k + 1]); i++) rem[i] = 1; return rem; }
+  // Piso: moda (bins de 1 cm) del 30 % más bajo de las alturas.
+  function floorOf(ys) {
+    if (!ys.length) return 0; const v = Float64Array.from(ys).sort(), lo = v[0], hi = v[Math.floor(v.length * 0.3)], nb = Math.max(1, Math.ceil((hi - lo) / 0.01) + 1), hist = new Int32Array(nb);
+    for (const y of v) { if (y > hi) break; hist[Math.min(nb - 1, Math.floor((y - lo) / 0.01))]++; }
+    let b = 0; for (let i = 1; i < nb; i++) if (hist[i] > hist[b]) b = i; return lo + (b + 0.5) * 0.01;
+  }
+  function niceStep(target) { const p = Math.pow(10, Math.floor(Math.log10(target))), m = target / p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p; }
+  return { alignYaw, alignRigid, rotQ, zip, crc32, rle, unrle, floorOf, niceStep };
+})();
+if (typeof module !== 'undefined') module.exports = SceneMath;
+
+(() => {
+if (typeof window === 'undefined') return;
+const $ = id => document.getElementById(id);
+const nf = (v, d) => v.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d });
+let units = 'm';
+const fmtLen = m => units === 'mm' ? nf(m * 1000, 0) + ' mm' : units === 'cm' ? nf(m * 100, 1) + ' cm' : nf(m, 2) + ' m';
+let toastT = 0;
+function toast(msg, ms = 3200) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ms); }
+function overlay(title, text, showFile) { $('overlay').hidden = !title; if (title) { $('ovTitle').textContent = title; $('ovText').textContent = text || ''; $('ovFile').hidden = !showFile; $('ovLib').hidden = !showFile; } }
+
+if (!window.THREE || !THREE.GLTFLoader || !THREE.OrbitControls || !THREE.TransformControls) {
+  overlay('No se pudo cargar el visor 3D', 'La librería three.js no respondió. Recarga la página con conexión a internet.'); return;
+}
+
+// ---------- Escena ----------
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+stage.prepend(renderer.domElement);
+const canvas = renderer.domElement;
+const scene = new THREE.Scene();
+const persp = new THREE.PerspectiveCamera(45, 1, 0.02, 3000);
+const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 5000);
+let camera = persp, orthoH = 10, view = '3d';
+persp.position.set(8, 6, 8);
+const controls = new THREE.OrbitControls(persp, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+const tc = new THREE.TransformControls(persp, canvas); tc.setSize(0.8); scene.add(tc);            // flechas: mover
+const tr = new THREE.TransformControls(persp, canvas); tr.setMode('rotate'); tr.setSize(1.15); scene.add(tr);   // anillo: girar
+const gizDrag = () => tc.dragging || tr.dragging;
+const helpers = new THREE.Group(); scene.add(helpers);
+let grid = null, selBox = null;
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let showGrid = true, selM = null;
+// Líneas gruesas (ancho en píxeles, como Polycam). Si la librería no carga, se usan líneas finas.
+const FAT = !!(THREE.Line2 && THREE.LineMaterial && THREE.LineGeometry), fatMats = [];
+function LM(color, width, o = {}) {
+  if (!FAT) return o.dashed ? new THREE.LineDashedMaterial({ color, dashSize: o.dashSize || 0.3, gapSize: o.gapSize || 0.2, depthTest: false, transparent: true, opacity: o.opacity ?? 1 })
+                            : new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: o.opacity ?? 1 });
+  const { dashed, ...rest } = o;
+  const m = new THREE.LineMaterial({ color, linewidth: width, depthTest: false, transparent: true, ...rest });
+  if (dashed) { m.defines.USE_DASH = ''; m.needsUpdate = true; m.userData.dashed = true; }
+  m.resolution.set(stage.clientWidth || 1, stage.clientHeight || 1); fatMats.push(m); return m;
+}
+const lineMat = LM(0x4b3cf0, 4.5);
+const lineOther = LM(0xc98f3c, 4);
+const lineDraft = LM(0x4b3cf0, 4.5);
+const dotOther = new THREE.MeshBasicMaterial({ color: 0xc98f3c, depthTest: false, transparent: true });
+const lineFaint = LM(0x4b3cf0, 2, { opacity: 0.45 });
+const dotMat = new THREE.MeshBasicMaterial({ color: 0x4b3cf0, depthTest: false, transparent: true });
+const movMat = new THREE.MeshBasicMaterial({ color: 0xe2730b, depthTest: false, transparent: true });
+const refMat = new THREE.MeshBasicMaterial({ color: 0x0a7fa3, depthTest: false, transparent: true });
+const pairLine = new THREE.LineBasicMaterial({ color: 0xe2730b, depthTest: false, transparent: true, opacity: 0.6 });
+const ringMat = new THREE.MeshBasicMaterial({ color: 0xd93a3f, side: THREE.DoubleSide, depthTest: false, transparent: true, opacity: 0.9 });
+const dotGeo = new THREE.SphereGeometry(1, 14, 10);
+function applyTheme() {
+  scene.background = new THREE.Color(css('--stage') || '#f3f1ef');
+  const a = new THREE.Color(css('--accent') || '#4b3cf0'); lineMat.color.copy(a); lineFaint.color.copy(a); lineDraft.color.copy(a); dotMat.color.copy(a);
+  movMat.color.set(css('--mov') || '#e2730b'); pairLine.color.set(css('--mov') || '#e2730b'); refMat.color.set(css('--sug') || '#0a7fa3'); ringMat.color.set(css('--danger') || '#d93a3f');
+  if (selBox) selBox.material.color.copy(a);
+  rebuildGrid();
+}
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (e) {}
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
+  renderer.setSize(w, h, false); persp.aspect = w / h; persp.updateProjectionMatrix(); updateOrtho();
+  for (const m of fatMats) m.resolution.set(w, h);
+}
+function updateOrtho() { const a = stage.clientWidth / Math.max(1, stage.clientHeight); ortho.left = -orthoH * a / 2; ortho.right = orthoH * a / 2; ortho.top = orthoH / 2; ortho.bottom = -orthoH / 2; ortho.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(stage);
+
+// ---------- Capas ----------
+const layers = []; let sel = null, nextId = 1;
+const HUES = [0.68, 0.08, 0.45, 0.92, 0.17, 0.56, 0.3, 0.8];
+const layerById = id => layers.find(L => L.id === id);
+
+function sceneBox(onlyVisible = true) {
+  const b = new THREE.Box3();
+  for (const L of layers) if (!onlyVisible || L.visible) { L.group.updateMatrixWorld(true); b.expandByObject(L.group); }
+  return b;
+}
+
+function addLayer(name, content, opts = {}) {
+  const group = new THREE.Group(); group.name = name; group.add(content); group.updateMatrixWorld(true);
+  const L = { id: nextId++, name, src: opts.src || name, group, meshes: [], tris: 0, visible: true, sample: !!opts.sample, hue: HUES[(nextId - 2) % HUES.length], strokes: [] };
+  content.traverse(o => {
+    if (!o.isMesh) return;
+    const old = o.material, map = old && old.map || null;
+    o.material = new THREE.MeshBasicMaterial({ map, color: map ? 0xffffff : 0xb9b4ad, side: THREE.DoubleSide });
+    o.userData.layerId = L.id;
+    o.geometry = o.geometry.clone();   // las copias de la cámara 2 comparten malla en el archivo: cada capa necesita la suya para borrar por separado
+    const geo = o.geometry, pa = geo.attributes.position, v = new THREE.Vector3();
+    let idx; if (geo.index) idx = Uint32Array.from(geo.index.array); else { idx = new Uint32Array(pa.count); for (let i = 0; i < pa.count; i++) idx[i] = i; }
+    geo.setIndex(new THREE.BufferAttribute(idx.slice(), 1));
+    const P = new Float32Array(pa.count * 3);
+    for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); P[i * 3] = v.x; P[i * 3 + 1] = v.y; P[i * 3 + 2] = v.z; }
+    const nt = idx.length / 3, cent = new Float32Array(nt * 3);
+    for (let t = 0; t < nt; t++) for (let c = 0; c < 3; c++) cent[t * 3 + c] = (P[idx[t * 3] * 3 + c] + P[idx[t * 3 + 1] * 3 + c] + P[idx[t * 3 + 2] * 3 + c]) / 3;
+    L.meshes.push({ obj: o, idx, cent, P, rem: new Uint8Array(nt) }); L.tris += nt;
+  });
+  if (!L.meshes.length) return null;
+  // Colocar al lado de lo que ya hay, como en la escena de Polycam
+  if (opts.matrix) { opts.matrix.decompose(group.position, group.quaternion, group.scale); group.updateMatrixWorld(true); }
+  else if (layers.length) { const b = sceneBox(false), own = new THREE.Box3().setFromObject(group); if (!b.isEmpty() && !own.isEmpty()) group.position.x = b.max.x - own.min.x + 1; }
+  scene.add(group); layers.push(L);
+  applyTint(L);
+  const restored = restoreLayer(L);
+  select(L); renderLayers(); rebuildGrid(); restorePendingMeasures();
+  return { L, restored };
+}
+
+// Una escena unida en Polycam trae un nodo por escaneo: cada uno pasa a ser una capa con su posición.
+function addGltf(name, gltf, opts = {}) {
+  let r = gltf.scene; r.updateMatrixWorld(true);
+  while (r.children.length === 1 && !r.children[0].isMesh) r = r.children[0];
+  const hasMesh = o => { let m = false; o.traverse(x => { if (x.isMesh) m = true; }); return m; };
+  const kids = r.children.filter(hasMesh);
+  if (kids.length < 2 || kids.some(k => k.isMesh)) { const res = addLayer(name, gltf.scene, { ...opts, src: name }); return res ? [res] : []; }
+  const out = [], base = name.replace(/\.(glb|gltf)$/i, '');
+  kids.forEach((k, i) => {
+    const M = k.matrixWorld.clone(), a = gltf.parser && gltf.parser.associations ? gltf.parser.associations.get(k) : null;
+    const idx = a ? (a.index !== undefined ? a.index : a.nodes) : undefined, nd = idx !== undefined && gltf.parser.json.nodes ? gltf.parser.json.nodes[idx] : null;
+    const sub = ((nd && nd.name) || k.name || 'parte ' + (i + 1)).replace(/_/g, ' ');
+    k.parent.remove(k); k.position.set(0, 0, 0); k.quaternion.identity(); k.scale.set(1, 1, 1); k.updateMatrix();
+    const res = addLayer(`${base} · ${sub}`, k, { ...opts, src: name, matrix: M }); if (res) out.push(res);
+  });
+  if (out.length > 1) toast(`"${name}" trae ${out.length} escaneos: quedaron como capas separadas, cada una en la posición que tenía en Polycam.`, 6000);
+  return out;
+}
+
+function disposeLayer(L) { L.group.traverse(o => { if (o.isMesh) { o.geometry.dispose(); if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); }
+// Quitar una capa la deja en la papelera mientras el historial la necesite (Deshacer la devuelve).
+function removeLayer(L, silent = false) {
+  scene.remove(L.group);
+  if (silent) disposeLayer(L); else trash.push(L);
+  layers.splice(layers.indexOf(L), 1);
+  for (let i = measures.length - 1; i >= 0; i--) if (measures[i].a.layerId === L.id || measures[i].b.layerId === L.id) dropMeasure(measures[i]);
+  if (sel === L) { clearAlign(); select(layers[layers.length - 1] || null); }
+  renderLayers(); renderMeasures(); rebuildGrid(); if (silent) return; save(); commit('quitar capa');
+  if (!layers.length) overlay(`${curScene}: sin capas`, 'Carga las cámaras guardadas en la página, o agrega tus GLB.', true);
+}
+
+function applyTint(L) {
+  const on = $('tint').checked, ghost = !!L.ghost;
+  for (const m of L.meshes) { const mat = m.obj.material;
+    if (on) mat.color.setHSL(L.hue, 0.75, 0.62); else mat.color.set(mat.map ? 0xffffff : 0xb9b4ad);
+    mat.transparent = ghost; mat.opacity = ghost ? 0.3 : 1; mat.depthWrite = !ghost; mat.needsUpdate = true; }
+}
+
+function renderLayers() {
+  const el = $('layers'); el.innerHTML = '';
+  if (!layers.length) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = 'Sin capas. Agrega los GLB de cada cara de la cámara.'; el.appendChild(p); }
+  for (const L of layers) {
+    const row = document.createElement('div'); row.className = 'layer' + (L === sel ? ' sel' : '');
+    row.innerHTML = `<input type="checkbox" aria-label="Mostrar capa" ${L.visible ? 'checked' : ''}><button type="button" class="nm"><span class="sw"></span><span class="t"></span><small></small></button><span></span><button type="button" class="del" aria-label="Quitar capa">✕</button>`;
+    row.querySelector('.sw').style.background = $('tint').checked ? `hsl(${L.hue * 360} 75% 62%)` : 'var(--line)';
+    row.querySelector('.t').textContent = L.src === FIX_SRC ? subName(L) : L.name; row.querySelector('.nm').title = L.name;
+    let erased = 0; for (const m of L.meshes) for (let t = 0; t < m.rem.length; t++) erased += m.rem[t];
+    row.querySelector('small').textContent = L.tris.toLocaleString('es-CL') + ' triángulos' + (erased ? ` · ${erased.toLocaleString('es-CL')} borrados` : '') + (L.sample ? ' · ejemplo' : '');
+    row.querySelector('input').addEventListener('change', e => { L.visible = e.target.checked; L.group.visible = L.visible; if (L === sel) updateSelBox(); rebuildGrid(); save(); commit(L.visible ? 'mostrar capa' : 'ocultar capa'); });
+    row.querySelector('.nm').addEventListener('click', () => select(L));
+    const del = row.querySelector('.del'); let armT = 0;
+    del.addEventListener('click', () => { if (del.classList.contains('arm')) { clearTimeout(armT); removeLayer(L); return; }
+      del.classList.add('arm'); del.textContent = '¿Quitar?'; armT = setTimeout(() => { del.classList.remove('arm'); del.textContent = '✕'; }, 3000); });
+    el.appendChild(row);
+  }
+  renderLib(); updateFixUI(); if (typeof renderGhost === 'function') renderGhost();
+}
+
+// ---------- Escaneos guardados en la página ----------
+const LIB = [
+  { name: 'my_scene_corregida.glb', mb: 98.9, nov: true, desc: 'cámaras 1 y 2 con techo, corregida', parts: ['scene7_p0.txt', 'scene7_p1.txt', 'scene7_p2.txt', 'scene7_p3.txt', 'scene7_p4.txt', 'scene7_p5.txt', 'scene7_p6.txt', 'scene7_p7.txt', 'scene7_p8.txt', 'scene7_p9.txt', 'scene7_p10.txt'] },
+  { name: 'Camara 3 (16 oct).glb', mb: 16.8, nov: true, single: true, desc: 'cámara 3, ubicada con el escaneo del 29 oct', parts: ['cam3_p0.txt', 'cam3_p1.txt'] },
+  { name: 'Camara 4 (copia de C3).glb', mb: 16.8, nov: true, single: true, desc: 'copia de la cámara 3 a 11,70 m', parts: ['cam3_p0.txt', 'cam3_p1.txt'] },
+  { name: 'Techo camaras 3 y 4 (28 oct).glb', mb: 19.5, nov: true, single: true, desc: 'techo, ubicado por las chimeneas', parts: ['roof34_p0.txt', 'roof34_p1.txt', 'roof34_p2.txt'] }
+];
+let libBusy = false;
+// ---------- Correcciones de la escena unida en Polycam (original ↔ corregida) ----------
+const FIX_SRC = 'my_scene_corregida.glb';
+const REV = 10;
+const FIX = {"Nov 5, 06:07 PM":{"orig":[-0.191746,-0.0,-0.981445,0.0,0.044671,0.998964,-0.008727,0.0,0.980428,-0.045516,-0.191547,0.0,4.36273,0.486605,3.677402,1.0],"corr":[0.027493,-0.0,-0.999622,0.0,-0.0,1.0,0.0,0.0,0.999622,0.0,0.027493,0.0,3.42117,3.293605,4.204762,1.0],"erase":[[30424,894,32203,7172,50635,29,51378,66,52185,1,52303,1,52537,1,58681,127,59337,17,59440,1,59746,6,59781,2,59787,11,59818,3,59835,3,59839,8,59853,4,59863,8,59876,6,59885,7,59895,5],[],[],[],[]]},"Nov 5, 04:47 PM":{"orig":[-0.981929,-0.0,0.189251,0.0,-0.0,1.0,-0.0,0.0,-0.189251,-0.0,-0.981929,0.0,2.122967,0.152042,4.269001,1.0],"corr":[-0.999902,-0.0,0.013996,0.0,-0.0,1.0,-0.0,0.0,-0.013996,-0.0,-0.999902,0.0,1.340857,2.764042,4.57531,1.0]},"Nov 5, 03:59 PM":{"orig":[-0.151209,0.0,-0.988502,0.0,0.0,1.0,0.0,0.0,0.988502,0.0,-0.151209,0.0,1.489195,0.391363,4.854131,1.0],"corr":[0.024609,0.0,-0.999697,0.0,-0.0,1.0,0.0,0.0,0.999697,0.0,0.024609,0.0,0.614236,2.858363,5.040139,1.0]},"Nov 5, 03:18 PM":{"orig":[0.98653,0.0,-0.163579,0.0,-0.0,1.0,-0.0,0.0,0.163579,0.0,0.98653,0.0,-2.225608,0.735906,5.738825,1.0],"corr":[0.999927,0.0,0.012085,0.0,-0.0,1.0,-0.0,0.0,-0.012085,0.0,0.999927,0.0,-3.198172,3.202906,5.259196,1.0]},"Nov 5, 03:37 PM":{"orig":[0.078265,-0.0,0.996933,0.0,-0.0,1.0,0.0,0.0,-0.996933,-0.0,0.078265,0.0,2.400847,0.741971,4.11398,1.0],"corr":[0.039518,-0.0,0.999219,0.0,-0.0,1.0,0.0,0.0,-0.999219,-0.0,0.039518,0.0,0.93318,3.21054,4.691735,1.0]},"Oct 29, 07:42 PM":{"orig":[-0.989583,-0.0,0.14396,0.0,-0.0,1.0,-0.0,0.0,-0.14396,-0.0,-0.989583,0.0,6.110724,0.455869,17.280685,1.0],"corr":[-0.999947,0.0,0.010306,0.0,0.0,1.0,0.0,0.0,-0.010306,0.0,-0.999947,0.0,3.173462,2.992869,29.372955,1.0]},"Oct 29, techo camaras 1 y 2":{"orig":[-0.982014,0.0,0.188811,0.0,0.0,1.0,0.0,0.0,-0.188811,0.0,-0.982014,0.0,4.129058,3.436978,9.288579,1.0],"corr":[-0.999908,0.0,0.013548,0.0,0.0,1.0,0.0,0.0,-0.013548,0.0,-0.999908,0.0,2.434933,5.903978,9.869036,1.0]},"Camara 2 (copia de C1) 03:59 PM":{"orig":[-0.151209,0.0,-0.988502,0.0,0.0,1.0,0.0,0.0,0.988502,0.0,-0.151209,0.0,3.453685,0.391363,15.874774,1.0],"corr":[0.024609,0.0,-0.999697,0.0,-0.0,1.0,0.0,0.0,0.999697,0.0,0.024609,0.0,0.614236,2.858363,16.2345,1.0]},"Camara 2 (copia de C1) 04:47 PM":{"orig":[-0.981929,0.0,0.189251,0.0,0.0,1.0,0.0,0.0,-0.189251,0.0,-0.981929,0.0,4.087458,0.297042,15.289645,1.0],"corr":[-0.999902,-0.0,0.013996,0.0,-0.0,1.0,-0.0,0.0,-0.013996,-0.0,-0.999902,0.0,1.340857,2.764042,15.769671,1.0]},"Camara 2 (copia de C1) 06:07 PM":{"orig":[-0.148357,0.0,-0.988934,0.0,0.0,1.0,0.0,0.0,0.988934,0.0,-0.148357,0.0,6.070461,0.826605,14.559774,1.0],"corr":[0.027493,-0.0,-0.999622,0.0,-0.0,1.0,0.0,0.0,0.999622,0.0,0.027493,0.0,3.42117,3.293605,15.399123,1.0]},"Camara 3 (16 oct).glb":{"orig":[-0.1691,0.0,-0.985599,0.0,0.0,1.0,0.0,0.0,0.985599,0.0,-0.1691,0.0,7.52946,-1.424504,31.329333,1.0],"corr":[0.006486,0.0,-0.999979,0.0,0.0,1.0,0.0,0.0,0.999979,0.0,0.006486,0.0,1.914651,1.042496,32.164474,1.0]},"Techo camaras 3 y 4 (28 oct).glb":{"orig":[-0.980659,0.0,0.195726,0.0,0.0,1.0,0.0,0.0,-0.195726,0.0,-0.980659,0.0,8.671471,1.033,38.276539,1.0],"corr":[-0.999788,0.0,0.020593,0.0,0.0,1.0,0.0,0.0,-0.020593,0.0,-0.999788,0.0,1.81978,3.5,39.204277,1.0]},"Camara 4 (copia de C3).glb":{"orig":[-0.1691,0.0,-0.985599,0.0,0.0,1.0,0.0,0.0,0.985599,0.0,-0.1691,0.0,9.582684,-1.424504,42.847768,1.0],"corr":[0.006486,0.0,-0.999979,0.0,0.0,1.0,0.0,0.0,0.999979,0.0,0.006486,0.0,1.914651,1.042496,43.864474,1.0]}};
+const subName = L => L.name.split(' · ').slice(1).join(' · ') || L.name;
+const fixKey = L => subName(L);
+const fixLayers = () => layers.filter(L => LIB.some(x => x.name === L.src) && FIX[fixKey(L)]);
+function applyFix(state, quiet = false) {
+  const ls = fixLayers(); if (!ls.length) return;
+  if (!quiet) pushUndoT();
+  for (const L of ls) {
+    const f = FIX[fixKey(L)]; new THREE.Matrix4().fromArray(f[state]).decompose(L.group.position, L.group.quaternion, L.group.scale); L.group.updateMatrixWorld(true);
+    if (f.erase) f.erase.forEach((runs, i) => { const m = L.meshes[i]; if (!m || !runs.length) return;
+      for (let k = 0; k < runs.length; k += 2) for (let t = runs[k]; t < Math.min(m.rem.length, runs[k] + runs[k + 1]); t++) m.rem[t] = state === 'corr' ? 1 : 0;
+      applyIdx(m); });
+  }
+  if (quiet) for (const L of ls) if (FIX[fixKey(L)].hide) { L.visible = false; L.group.visible = false; }
+  renderLayers(); updateEraseUI(); afterTransform(state === 'corr' ? 'ver corregida' : 'ver original de Polycam'); if (!quiet) setView(view);
+  if (!quiet) toast(state === 'corr' ? 'Escena corregida.' : 'Escena tal como venía de Polycam. Vuelve con "Corregida" o con Deshacer movimiento.', 4500);
+}
+function fixStateNow() {
+  const ls = fixLayers(); if (!ls.length) return null; let corr = true, orig = true;
+  for (const L of ls) { const f = FIX[fixKey(L)], e = L.group.matrix.compose(L.group.position, L.group.quaternion, L.group.scale).elements;
+    if (f.corr.some((v, i) => Math.abs(v - e[i]) > 2e-3)) corr = false; if (f.orig.some((v, i) => Math.abs(v - e[i]) > 2e-3)) orig = false; }
+  return corr ? 'corr' : orig ? 'orig' : 'manual';
+}
+function updateFixUI() {
+  const card = $('cardFix'); if (!card) return; const st = fixStateNow(); card.hidden = st === null; if (st === null) return;
+  $('fixCorr').setAttribute('aria-pressed', String(st === 'corr')); $('fixOrig').setAttribute('aria-pressed', String(st === 'orig'));
+  $('fixState').textContent = st === 'corr' ? 'Mostrando la versión corregida.' : st === 'orig' ? 'Mostrando la escena tal como venía de Polycam, con sus errores.' : 'Moviste capas a mano: la escena no coincide con ninguna de las dos versiones. Los botones la devuelven a una de ellas.';
+}
+$('fixCorr').addEventListener('click', () => applyFix('corr'));
+$('fixOrig').addEventListener('click', () => applyFix('orig'));
+
+function renderLib() {
+  const el = $('lib'); if (!el) return; el.innerHTML = '';
+  for (const it of LIB) {
+    const inScene = layers.some(L => L.src === it.name), row = document.createElement('div'); row.className = 'li';
+    row.innerHTML = '<span></span><button type="button"></button>';
+    const sp = row.querySelector('span'); sp.textContent = it.name; const sm = document.createElement('small'); sm.textContent = `${nf(it.mb, 1)} MB · ${it.desc}`; sp.appendChild(sm); sp.title = it.name + ' · ' + it.desc;
+    const b = row.querySelector('button'); b.textContent = inScene ? 'En la escena' : 'Cargar'; b.className = inScene ? 'in' : ''; b.disabled = inScene || libBusy;
+    b.addEventListener('click', () => loadLibItems([it]));
+    el.appendChild(row);
+  }
+  
+}
+async function loadLibItems(items) {
+  items = items.filter(it => !layers.some(L => L.src === it.name)); if (!items.length || libBusy) return;
+  libBusy = true; renderLib(); let ok = 0, rest = 0;
+  try {
+    for (const [k, it] of items.entries()) {
+      const tag = items.length > 1 ? ` (${k + 1} de ${items.length})` : '';
+      try {
+        const chunks = []; let total = 0;   // cada parte es base64 completo (largo múltiplo de 4): se decodifica por separado
+        for (const [i, p] of it.parts.entries()) { overlay(`Descargando ${it.name}${tag}…`, `Parte ${i + 1} de ${it.parts.length} · ${nf(it.mb, 1)} MB en total.`); const r = await fetch(p); if (!r.ok) throw new Error('no se encontró ' + p);
+          const bin = atob((await r.text()).trim()), c = new Uint8Array(bin.length); for (let q = 0; q < bin.length; q++) c[q] = bin.charCodeAt(q); chunks.push(c); total += c.length; }
+        overlay(`Preparando ${it.name}${tag}…`, 'Leyendo la malla y sus texturas.');
+        await new Promise(r => setTimeout(r, 20));
+        const u = new Uint8Array(total); let off = 0; for (const c of chunks) { u.set(c, off); off += c.length; } chunks.length = 0;
+        const g = await parseGltf(u.buffer, null); const rs = it.single ? [addLayer(it.name, g.scene, { src: it.name, matrix: FIX[it.name] ? new THREE.Matrix4().fromArray(FIX[it.name].corr) : null })].filter(Boolean) : addGltf(it.name, g, { sample: !!it.sample }); if (it.name === FIX_SRC && rs.length && !rs.some(r => r.restored)) applyFix('corr', true);
+        if (rs.length) { ok++; if (rs.some(r => r.restored)) rest++; }
+      } catch (err) { toast(`No se pudo cargar "${it.name}". ${err.message || ''}`, 6000); }
+    }
+  } finally { libBusy = false; overlay(null); renderLib(); }
+  commit('cargar escena'); save();
+  if (ok) { setView(view); toast(`${ok} ${ok === 1 ? 'escaneo cargado' : 'escaneos cargados'} en ${curScene}` + (rest ? `; ${rest} con la posición y borrados que tenías` : '') + '.'); }
+  else if (!layers.length) overlay(`${curScene}: sin capas`, 'Carga las cámaras guardadas en la página, o agrega tus GLB.', true);
+}
+$('ovLib').addEventListener('click', () => loadLibItems(LIB.filter(x => x.nov)));
+
+function select(L) {
+  const prev = sel; if (prev !== L) clearAlign();
+  sel = L; if (prev) applyTint(prev); if (L) applyTint(L);
+  if (selBox) { helpers.remove(selBox); selBox = null; }
+  if (L) { selBox = new THREE.BoxHelper(L.group, new THREE.Color(css('--accent') || '#4b3cf0')); selBox.material.depthTest = false; selBox.material.transparent = true; selBox.material.opacity = 0.5; helpers.add(selBox); }
+  setMode(mode); syncInputs(); renderLayers(); updateEraseUI();
+}
+function updateSelBox() { if (selBox && sel) { selBox.visible = sel.visible; selBox.update(); } }
+
+// ---------- Transformación ----------
+const TI = ['px', 'py', 'pz', 'rx', 'ry', 'rz', 'sc'];
+function syncInputs() {
+  const on = !!sel; for (const k of TI) $(k).disabled = !on;
+  for (const id of ['btnFloor', 'btnLevel', 'yawOnly', 'ghost']) $(id).disabled = !on;
+  $('tiltFlag').hidden = true;
+  $('btnFloorAll').disabled = !layers.length;
+  $('selName').textContent = on ? sel.name : 'Ninguna capa seleccionada.';
+  if (!on) { for (const k of TI) $(k).value = ''; return; }
+  const g = sel.group, d = 180 / Math.PI;
+  $('px').value = g.position.x.toFixed(3); $('py').value = g.position.y.toFixed(3); $('pz').value = g.position.z.toFixed(3);
+  $('rx').value = (g.rotation.x * d).toFixed(2); $('ry').value = (g.rotation.y * d).toFixed(2); $('rz').value = (g.rotation.z * d).toFixed(2);
+  $('sc').value = g.scale.x.toFixed(4);
+  const tilt = Math.acos(Math.min(1, new THREE.Vector3(0, 1, 0).applyQuaternion(g.quaternion).y)) * 180 / Math.PI;
+  if (tilt > 0.3) { const sz = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3()), err = Math.tan(tilt * Math.PI / 180) * Math.max(sz.x, sz.z);
+    $('tiltFlag').hidden = false; $('tiltFlag').textContent = `Esta capa está inclinada ${nf(tilt, 1)}° respecto de la vertical: en su largo eso es unos ${fmtLen(err)} de diferencia de altura. Los escaneos de Polycam vienen nivelados; usa Quitar inclinación salvo que la hayas inclinado a propósito.`; }
+  updateSelBox();
+}
+for (const k of TI) $(k).addEventListener('change', () => {
+  if (!sel) return; const v = parseFloat($(k).value); if (!isFinite(v)) { syncInputs(); return; }
+  pushUndoT(); const g = sel.group, r = Math.PI / 180;
+  if (k[0] === 'p') g.position[k[1]] = v; else if (k[0] === 'r') g.rotation[k[1]] = v * r; else if (v > 0) g.scale.setScalar(v);
+  afterTransform('editar posición');
+});
+function afterTransform(label = 'mover capa') { syncInputs(); updateMeasureValues(); rebuildGrid(); save(); updateFixUI(); commit(label); }
+
+function pushUndoT() {}
+function premultiply(L, T) {
+  const M = new THREE.Matrix4().compose(L.group.position, L.group.quaternion, L.group.scale).premultiply(T);
+  M.decompose(L.group.position, L.group.quaternion, L.group.scale); L.group.updateMatrixWorld(true);
+}
+
+let tcPress = false;
+// Flechas y anillo a la vez, como el gizmo de Polycam. El que se toma primero bloquea al otro hasta soltar.
+for (const [g, other, lbl] of [[tc, tr, 'mover capa'], [tr, tc, 'girar capa']]) {
+  g.addEventListener('mouseDown', () => { tcPress = true; other.enabled = false; });
+  g.addEventListener('dragging-changed', e => { controls.enabled = !e.value; if (!e.value) { other.enabled = true; afterTransform(lbl); } });
+  g.addEventListener('objectChange', () => { syncInputs(); updateMeasureValues(); });
+}
+window.addEventListener('pointerup', () => { if (!gizDrag()) { tc.enabled = true; tr.enabled = true; } });
+function applyRotAxes() { const yaw = $('yawOnly').checked; tr.showX = !yaw; tr.showZ = !yaw; tr.showY = true; }
+$('yawOnly').addEventListener('change', () => { applyRotAxes(); updateAlignUI(); });
+$('ghost').addEventListener('change', () => { if (sel) applyTint(sel); });
+$('tint').addEventListener('change', () => { layers.forEach(applyTint); renderLayers(); $('rbTint').setAttribute('aria-pressed', String($('tint').checked)); });
+
+function layerFloor(L) {
+  L.group.updateMatrixWorld(true); const ys = [], v = new THREE.Vector3();
+  for (const m of L.meshes) { const step = Math.max(1, Math.floor(m.P.length / 3 / 60000));
+    m.obj.updateMatrixWorld(true);
+    for (let i = 0; i < m.P.length / 3; i += step) { v.set(m.P[i * 3], m.P[i * 3 + 1], m.P[i * 3 + 2]).applyMatrix4(L.group.matrixWorld); ys.push(v.y); } }
+  return SceneMath.floorOf(ys);
+}
+$('btnFloor').addEventListener('click', () => { if (!sel) return; pushUndoT(sel); const f = layerFloor(sel); sel.group.position.y -= f; afterTransform('bajar al piso'); toast(`Piso de "${sel.name}" llevado a Y = 0 (se movió ${fmtLen(Math.abs(f))}).`); });
+$('btnLevel').addEventListener('click', () => {
+  if (!sel) return; const g = sel.group, up = new THREE.Vector3(0, 1, 0).applyQuaternion(g.quaternion);
+  if (up.y > 0.99999) { toast('La capa ya está nivelada.'); return; }
+  pushUndoT(sel); const c = new THREE.Box3().setFromObject(g).getCenter(new THREE.Vector3());
+  const T = new THREE.Matrix4().makeTranslation(c.x, c.y, c.z).multiply(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(up, new THREE.Vector3(0, 1, 0)))).multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z));
+  premultiply(sel, T); afterTransform('quitar inclinación'); toast(`"${sel.name}" nivelada. Revisa su altura con Alinear (giro horizontal) o con una medida.`);
+});
+$('btnFloorAll').addEventListener('click', () => { if (!layers.length) return; pushUndoT(); for (const L of layers) L.group.position.y -= layerFloor(L); afterTransform('todas al piso'); toast('Todas las capas quedaron con el piso en Y = 0.'); });
+
+// ---------- Puntos sobre las mallas ----------
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pick(e, filter) {
+  const r = canvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera); const objs = [];
+  for (const L of layers) if (L.visible && (!filter || filter(L))) for (const m of L.meshes) objs.push(m.obj);
+  if (!objs.length) return null; const h = ray.intersectObjects(objs, false)[0]; if (!h) return null;
+  const L = layerById(h.object.userData.layerId); return { h, L, pt: { layerId: L.id, local: L.group.worldToLocal(h.point.clone()) } };
+}
+const worldOf = pt => { const L = layerById(pt.layerId); return L ? L.group.localToWorld(pt.local.clone()) : null; };
+function pxWorld(pos, px) {
+  const h = stage.clientHeight || 1;
+  if (camera.isOrthographicCamera) return (camera.top - camera.bottom) / camera.zoom / h * px;
+  return 2 * camera.position.distanceTo(pos) * Math.tan(camera.fov * Math.PI / 360) / h * px;
+}
+function toScreen(p) { const v = p.clone().project(camera); return { x: (v.x + 1) / 2 * stage.clientWidth, y: (1 - v.y) / 2 * stage.clientHeight, ok: v.z > -1 && v.z < 1 }; }
+function makeDot(mat, r = 5) { const m = new THREE.Mesh(dotGeo, mat); m.renderOrder = 998; m.userData.px = r; helpers.add(m); return m; }
+function makeLine(mat) {
+  let l;
+  if (mat.isLineMaterial) { const g = new THREE.LineGeometry(); g.setPositions([0, 0, 0, 0, 0, 1e-3]); l = new THREE.Line2(g, mat); l.raycast = () => {}; l.computeLineDistances(); }
+  else { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)); l = new THREE.Line(g, mat); }
+  l.renderOrder = 997; l.frustumCulled = false; helpers.add(l); return l;
+}
+function setLine(l, a, b) {
+  if (l.isLine2) { const d = l.geometry.attributes.instanceStart.data, r = d.array; r[0] = a.x; r[1] = a.y; r[2] = a.z; r[3] = b.x; r[4] = b.y; r[5] = b.z; d.needsUpdate = true; if (l.material.userData.dashed) l.computeLineDistances(); return; }
+  const p = l.geometry.attributes.position; p.setXYZ(0, a.x, a.y, a.z); p.setXYZ(1, b.x, b.y, b.z); p.needsUpdate = true;
+}
+function label(cls) { const d = document.createElement('div'); d.className = cls; $('labels').appendChild(d); return d; }
+
+// ---------- Medidas ----------
+const measures = []; let mDraft = null, mSeq = 0, pendingMeasures = [];
+const AXN = { free: 'directa', h: 'horizontal', v: 'vertical', x: 'en X', z: 'en Z' };
+function measureGeom(m) {
+  const A = worldOf(m.a), B = worldOf(m.b); if (!A || !B) return null; const C = B.clone();
+  if (m.axis === 'h') C.y = A.y; else if (m.axis === 'v') { C.x = A.x; C.z = A.z; } else if (m.axis === 'x') { C.y = A.y; C.z = A.z; } else if (m.axis === 'z') { C.x = A.x; C.y = A.y; }
+  return { A, B, C, d: A.distanceTo(C), dx: Math.abs(B.x - A.x), dy: Math.abs(B.y - A.y), dz: Math.abs(B.z - A.z) };
+}
+function addMeasure(a, b, axis, name, id) {
+  if (id) mSeq = Math.max(mSeq, id); const mid = id || ++mSeq;
+  const m = { id: mid, a, b, axis, name: name || `Medida ${mid}`, line: makeLine(lineMat), faint: makeLine(lineFaint), da: makeDot(dotMat), db: makeDot(dotMat), el: label('ml') };
+  m.el.addEventListener('click', () => selectMeasure(m)); if (!restoring && !applying) selM = m;
+  measures.push(m); renderMeasures(); save(); commit('medir'); return m;
+}
+function dropMeasure(m) { if (selM === m) selM = null; helpers.remove(m.line, m.faint, m.da, m.db); m.line.geometry.dispose(); m.faint.geometry.dispose(); m.el.remove(); measures.splice(measures.indexOf(m), 1); }
+function renderMeasures() {
+  const el = $('mlist'); el.innerHTML = '';
+  if (!measures.length) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = 'Sin medidas. Activa Medir y haz clic en dos puntos de la malla.'; el.appendChild(p); return; }
+  measures.forEach((m, i) => {
+    const row = document.createElement('div'); row.className = 'mi';
+    row.innerHTML = `<span class="n">${i + 1}</span><input type="text" aria-label="Nombre de la medida"><span class="v"></span><button type="button" aria-label="Borrar medida">✕</button>`;
+    const inp = row.querySelector('input'); inp.value = m.name; inp.id = 'mn' + m.id;
+    inp.addEventListener('change', () => { m.name = inp.value.trim() || `Medida ${i + 1}`; save(); commit('renombrar medida'); });
+    row.querySelector('button').addEventListener('click', () => { dropMeasure(m); renderMeasures(); save(); commit('borrar medida'); });
+    m.valEl = row.querySelector('.v'); el.appendChild(row);
+  });
+  updateMeasureValues();
+}
+function updateMeasureValues() {
+  measures.forEach((m, i) => { const g = measureGeom(m); if (!g || !m.valEl) return;
+    m.valEl.innerHTML = ''; m.valEl.append(fmtLen(g.d)); const s = document.createElement('small'); s.textContent = AXN[m.axis]; m.valEl.appendChild(s); });
+  updateMbar();
+}
+// Medida seleccionada: barra inferior con el total, el nombre y Borrar, como en Polycam.
+function selectMeasure(m) { selM = m; updateMbar(); }
+function fmtTotal(d) { let m = Math.floor(d), cm = Math.round((d - m) * 100); if (cm === 100) { m++; cm = 0; } return `${m} m ${String(cm).padStart(2, '0')} cm`; }
+function updateMbar() {
+  const b = $('mbar'), g = selM && measures.includes(selM) && mode === 'measure' ? measureGeom(selM) : null; b.hidden = !g || !$('showM').checked; if (!g) return;
+  $('mTotal').textContent = `Total: ${fmtTotal(g.d)}` + (selM.axis !== 'free' ? ` (${AXN[selM.axis]})` : ''); if (document.activeElement !== $('mName')) $('mName').value = selM.name;
+}
+$('mName').addEventListener('change', () => { if (!selM) return; selM.name = $('mName').value.trim() || selM.name; renderMeasures(); save(); commit('renombrar medida'); });
+$('mDel').addEventListener('click', () => { if (!selM) return; dropMeasure(selM); renderMeasures(); save(); commit('borrar medida'); });
+$('showM').addEventListener('change', updateMbar);
+
+// ---------- Alinear y escuadrar ----------
+let pairs = [], pendMov = null, sqA = null;
+const pairVis = [];
+function clearAlign() { pairs = []; pendMov = null; for (const v of pairVis) { helpers.remove(v.dm, v.dr, v.ln); v.ln.geometry.dispose(); v.lm.remove(); v.lr.remove(); } pairVis.length = 0; if (pendVis) { helpers.remove(pendVis.dm); pendVis.lm.remove(); pendVis = null; } updateAlignUI(); }
+let pendVis = null;
+function updateAlignUI() {
+  const n = pairs.length, yaw = $('yawOnly').checked, need = yaw ? 2 : 3;
+  $('alignInfo').textContent = !sel ? 'Selecciona primero la capa que vas a mover.' :
+    `${n} ${n === 1 ? 'par' : 'pares'}${pendMov ? ' · falta el punto en la otra capa' : ''}. Se mueve "${sel.name}"; ${yaw ? 'giro solo horizontal' : 'giro libre'} (necesita ${need}).`;
+  $('btnAlign').disabled = n < need; $('btnAlignClr').disabled = !n && !pendMov;
+}
+function addPair(mov, ref) {
+  pairs.push({ mov, ref }); const i = pairs.length;
+  const v = { dm: makeDot(movMat, 6), dr: makeDot(refMat, 6), ln: makeLine(pairLine), lm: label('pl m'), lr: label('pl r') };
+  v.lm.textContent = String(i); v.lr.textContent = i + '′'; pairVis.push(v);
+}
+$('btnAlign').addEventListener('click', () => {
+  if (!sel) return; const P = pairs.map(p => worldOf(p.mov).toArray()), Q = pairs.map(p => worldOf(p.ref).toArray());
+  pushUndoT(sel); let T;
+  if ($('yawOnly').checked) { const r = SceneMath.alignYaw(P, Q); T = new THREE.Matrix4().makeRotationY(r.angle).setPosition(r.t[0], r.t[1], r.t[2]); }
+  else { const r = SceneMath.alignRigid(P, Q); T = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion(...r.q)).setPosition(r.t[0], r.t[1], r.t[2]); }
+  premultiply(sel, T);
+  let ss = 0, mx = 0; pairs.forEach(p => { const d = worldOf(p.mov).distanceTo(worldOf(p.ref)); ss += d * d; mx = Math.max(mx, d); });
+  const rms = Math.sqrt(ss / pairs.length);
+  $('alignRes').className = rms < 0.03 ? 'ok' : 'flag';
+  $('alignRes').textContent = `Alineado con ${pairs.length} pares. Error medio ${fmtLen(rms)}, máximo ${fmtLen(mx)}.` + (rms >= 0.03 ? ' Revisa que cada par marque el mismo punto real, o agrega pares más separados entre sí.' : ' Puedes agregar más pares y volver a aplicar para afinar.');
+  afterTransform('alinear por puntos');
+});
+$('btnAlignClr').addEventListener('click', () => { clearAlign(); $('alignRes').textContent = ''; });
+let sqVis = null;
+function squareScene(A, B) {
+  const dx = B.x - A.x, dz = B.z - A.z; if (Math.hypot(dx, dz) < 0.05) { toast('Los dos puntos están demasiado cerca. Márcalos más separados a lo largo de la pared.'); return; }
+  const ang = Math.atan2(dz, dx);
+  const T = new THREE.Matrix4().makeTranslation(A.x, A.y, A.z).multiply(new THREE.Matrix4().makeRotationY(ang)).multiply(new THREE.Matrix4().makeTranslation(-A.x, -A.y, -A.z));
+  pushUndoT(); for (const L of layers) premultiply(L, T);
+  afterTransform('escuadrar'); toast(`Escena girada ${nf(Math.abs(ang * 180 / Math.PI), 1)}°: la pared marcada quedó paralela al eje X.`);
+}
+
+// ---------- Borrador ----------
+let painting = false, stroke = null;
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48), ringMat); ring.renderOrder = 999; ring.visible = false; helpers.add(ring);
+const brushR = () => parseInt($('brush').value, 10) / 100;
+$('brush').addEventListener('input', () => { $('brushOut').textContent = $('brush').value + ' cm'; });
+function eraseAt(L, p) {
+  const loc = L.group.worldToLocal(p.clone()), r = brushR() / L.group.scale.x, r2 = r * r;
+  L.meshes.forEach((m, mi) => {
+    const c = m.cent, hit = [];
+    for (let t = 0, n = m.rem.length; t < n; t++) { if (m.rem[t]) continue; const dx = c[t * 3] - loc.x; if (dx > r || dx < -r) continue; const dy = c[t * 3 + 1] - loc.y, dz = c[t * 3 + 2] - loc.z; if (dx * dx + dy * dy + dz * dz <= r2) { m.rem[t] = 1; hit.push(t); } }
+    if (hit.length) { applyIdx(m); let s = stroke.get(L.id + ':' + mi); if (!s) stroke.set(L.id + ':' + mi, s = { L, mi, t: [] }); for (const t of hit) s.t.push(t); }
+  });
+}
+function applyIdx(m) {
+  let n = 0; for (let t = 0; t < m.rem.length; t++) if (!m.rem[t]) n++;
+  const out = new Uint32Array(n * 3); let o = 0;
+  for (let t = 0; t < m.rem.length; t++) if (!m.rem[t]) { out[o++] = m.idx[t * 3]; out[o++] = m.idx[t * 3 + 1]; out[o++] = m.idx[t * 3 + 2]; }
+  m.obj.geometry.setIndex(new THREE.BufferAttribute(out, 1));
+}
+const strokesAll = [];
+function endPaint() {
+  painting = false; controls.enabled = true;
+  if (stroke && stroke.size) { strokesAll.push([...stroke.values()]); renderLayers(); save(); commit('borrador'); }
+  stroke = null; updateEraseUI();
+}
+function updateEraseUI() {
+  let er = 0; if (sel) for (const m of sel.meshes) for (let t = 0; t < m.rem.length; t++) er += m.rem[t];
+  $('btnRestoreE').disabled = !er;
+  $('eraseInfo').textContent = sel ? (er ? `${er.toLocaleString('es-CL')} triángulos borrados en "${sel.name}".` : `Nada borrado en "${sel.name}".`) : '';
+}
+$('btnRestoreE').addEventListener('click', () => {
+  if (!sel) return; for (const m of sel.meshes) { m.rem.fill(0); applyIdx(m); }
+  for (let i = strokesAll.length - 1; i >= 0; i--) { strokesAll[i] = strokesAll[i].filter(e => e.L !== sel); if (!strokesAll[i].length) strokesAll.splice(i, 1); }
+  renderLayers(); updateEraseUI(); save(); commit('restaurar capa');
+});
+
+// ---------- Modos e interacción ----------
+let mode = 'measure';
+const HINTS = {
+  move: 'Clic en una capa para seleccionarla · flechas para moverla, anillo para girarla',
+  measure: 'Haz clic en dos puntos para medir',
+  erase: 'Pinta sobre lo que quieras quitar · clic derecho desplaza la vista',
+  align: 'Punto en la capa seleccionada (naranja) y luego el mismo punto en otra capa (cian)',
+  square: 'Marca dos puntos a lo largo de una pared de la cámara'
+};
+function setMode(m) {
+  mode = m; document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+  if (m === 'rotate') m = mode = 'move';
+  tc.detach(); tr.detach(); tc.enabled = true; tr.enabled = true;
+  if (m === 'move' && sel && sel.visible) { tc.attach(sel.group); tr.attach(sel.group); applyRotAxes(); }
+  const orth = camera.isOrthographicCamera;
+  controls.mouseButtons.LEFT = m === 'erase' ? -1 : orth ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+  controls.touches.ONE = m === 'erase' ? -1 : orth ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+  stage.classList.toggle('cross', m !== 'move' && m !== 'rotate');
+  ring.visible = false; hover.visible = false; measRing.visible = false; canvas.style.cursor = '';
+  if (m !== 'measure') clearDraft(); else updateDbar();
+  if (m !== 'square') { sqA = null; if (sqVis) sqVis.visible = false; }
+  $('hint').textContent = HINTS[m] + (orth ? ' · vista ortogonal: arrastra para desplazar' : '');
+  if (m === 'align') updateAlignUI();
+  $('ebar').hidden = m !== 'erase'; updateMbar();
+}
+// Mover y Borrador cambian el modelo: piden confirmación antes de activarse.
+const ASK = {
+  move: ['Activar Mover', 'Con Mover cambias la posición de las capas al arrastrar las flechas o el anillo. Las 4 cámaras ya están ubicadas; si mueves algo por error, usa Deshacer (↺).'],
+  erase: ['Activar Borrador', 'El borrador quita partes de la malla al pintar sobre ella. Lo borrado se recupera con Deshacer (↺) o con Restaurar capa.']
+};
+const askSkip = {}; let dlgNext = null, dlgFrom = null;
+function requestMode(m) {
+  if (m === mode || !ASK[m] || askSkip[m]) { setMode(m); return; }
+  dlgNext = m; dlgFrom = document.activeElement; $('dlgT').textContent = ASK[m][0]; $('dlgP').textContent = ASK[m][1]; $('dlgSkip').checked = false; $('dlgOk').textContent = 'Activar';
+  $('dlg').hidden = false; $('dlgNo').focus();
+}
+function closeDlg(ok) {
+  const m = dlgNext; $('dlg').hidden = true; dlgNext = null;
+  if (ok && m) { if ($('dlgSkip').checked) askSkip[m] = true; setMode(m); }
+  if (dlgFrom && dlgFrom.focus) dlgFrom.focus();
+}
+$('dlgOk').addEventListener('click', () => closeDlg(true));
+$('dlgNo').addEventListener('click', () => closeDlg(false));
+$('dlg').addEventListener('click', e => { if (e.target === $('dlg')) closeDlg(false); });
+$('dlg').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeDlg(false); } if (e.key === 'Tab') { const a = $('dlgSkip'), z = $('dlgOk'); if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); } else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); } } });
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => requestMode(b.dataset.mode)));
+const hover = makeDot(dotMat, 5); hover.visible = false;
+const draftLine = makeLine(lineDraft); draftLine.visible = false;
+const draftLbl = label('ml draft'); draftLbl.hidden = true;
+// ---------- Medir como en Polycam: anillo sobre la superficie, guías de ejes, imán a puntas y ejes, puntas arrastrables ----------
+const AXES = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
+const AXTXT = { x: 'en el eje X', y: 'vertical', z: 'en el eje Z', punta: 'en la punta de otra medida' };
+const AXCOL = { x: 0xe5484d, y: 0x2fa36b, z: 0x3e63dd };
+const SNAPCOL = '#36d17c', ZV = new THREE.Vector3(0, 0, 1);
+const guides = {};
+for (const k of ['x', 'y', 'z']) {
+  const dash = LM(AXCOL[k], 2.5, { dashed: true, dashSize: 0.25, gapSize: 0.18, opacity: 0.9 });
+  const solid = LM(AXCOL[k], 3.5);
+  const l = makeLine(dash); l.visible = false; l.userData = { dash, solid }; guides[k] = l;
+}
+function setGuides(A, hot) {
+  for (const k in guides) { const l = guides[k]; if (!A) { l.visible = false; continue; }
+    const d = AXES[k], len = k === 'y' ? 15 : 80; setLine(l, A.clone().addScaledVector(d, -len), A.clone().addScaledVector(d, len));
+    l.material = k === hot ? l.userData.solid : l.userData.dash; l.computeLineDistances(); l.visible = true; }
+}
+// Cursor tipo Polycam: borde blanco, anillo de color y centro translúcido, apoyado en la superficie.
+const measRingMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(css('--accent') || '#6a5cff'), side: THREE.DoubleSide, depthTest: false, transparent: true });
+const measDiskMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(css('--accent') || '#6a5cff'), side: THREE.DoubleSide, depthTest: false, transparent: true, opacity: 0.22 });
+const measEdgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, depthTest: false, transparent: true, opacity: 0.95 });
+const measRing = new THREE.Group();
+for (const [geo, mat, o] of [[new THREE.CircleGeometry(0.62, 40), measDiskMat, 0], [new THREE.RingGeometry(0.62, 0.86, 48), measRingMat, 1], [new THREE.RingGeometry(0.86, 1, 48), measEdgeMat, 2]]) {
+  const m = new THREE.Mesh(geo, mat); m.renderOrder = 999 + o; measRing.add(m); }
+measRing.userData.px = 20; measRing.visible = false; helpers.add(measRing);
+function ptFromWorld(W, layerId) { const L = layerById(layerId) || layers[0]; return L ? { layerId: L.id, local: L.group.worldToLocal(W.clone()) } : null; }
+function cursorXY(e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+function closestOnAxis(from, dir) {   // punto del eje más cercano al rayo del cursor (para cuando no hay superficie)
+  const o = ray.ray.origin, u = ray.ray.direction, w = from.clone().sub(o), b = dir.dot(u), d = dir.dot(w), e2 = u.dot(w), den = 1 - b * b;
+  if (Math.abs(den) < 1e-6) return null; const t = (b * e2 - d) / den, sRay = (e2 - b * d) / den; if (sRay <= 0) return null; return from.clone().addScaledVector(dir, t);
+}
+function endpoints(exclude) {
+  const out = [];
+  for (const m of measures) { if (!m.line.visible) continue; const g = measureGeom(m); if (!g) continue;
+    for (const [end, P] of [['a', g.A], ['b', g.C]]) if (!(exclude && exclude.m === m && exclude.end === end)) out.push({ m, end, P }); }
+  return out;
+}
+// Dónde cae el punto: 1) punta de otra medida, 2) uno de los ejes que salen del otro punto, 3) la superficie bajo el cursor.
+function measureTarget(e, from, exclude) {
+  const c = cursorXY(e), r = pick(e); let best = null, bd = 12;
+  for (const q of endpoints(exclude)) { const s = toScreen(q.P); if (!s.ok) continue; const d = Math.hypot(s.x - c.x, s.y - c.y); if (d < bd) { bd = d; best = { W: q.P.clone(), snap: 'punta', layerId: (q.end === 'a' ? q.m.a : q.m.b).layerId }; } }
+  if (best) return best;
+  if (from) { let ba = 16;
+    for (const k of ['y', 'x', 'z']) { const dir = AXES[k], P = r ? from.clone().addScaledVector(dir, r.h.point.clone().sub(from).dot(dir)) : closestOnAxis(from, dir);
+      if (!P || P.distanceTo(from) < 0.01) continue; const s = toScreen(P); if (!s.ok) continue; const d = Math.hypot(s.x - c.x, s.y - c.y);
+      if (d < ba) { ba = d; best = { W: P, snap: k, layerId: r ? r.L.id : null }; } }
+    if (best) return best; }
+  if (r) return { W: r.h.point.clone(), snap: null, layerId: r.L.id, normal: r.h.face.normal.clone().transformDirection(r.h.object.matrixWorld) };
+  return null;
+}
+function showTarget(t) {
+  hover.visible = measRing.visible = !!t; if (!t) return;
+  hover.position.copy(t.W); measRing.position.copy(t.W);
+  if (t.normal && !t.snap) measRing.quaternion.setFromUnitVectors(ZV, t.normal); else measRing.quaternion.copy(camera.quaternion);
+  const cc = t.snap ? SNAPCOL : (css('--accent') || '#6a5cff'); measRingMat.color.set(cc); measDiskMat.color.set(cc);
+  measRing.userData.px = t.snap ? 24 : 20;
+}
+function updateDbar() { const on = mode === 'measure' && !!mDraft; $('dbar').hidden = !on; $('hint').hidden = on; }
+function clearDraft() { mDraft = null; draftLine.visible = false; draftLbl.hidden = true; setGuides(null); updateDbar(); }
+$('dUndo').addEventListener('click', clearDraft);
+$('dDone').addEventListener('click', () => { clearDraft(); selM = null; updateMbar(); });
+// Arrastrar la punta de una medida; un clic sin arrastrar empieza una medida nueva desde esa punta.
+let mDrag = null, dragQ = null;
+stage.addEventListener('pointerdown', e => {
+  if (mode !== 'measure' || e.button !== 0 || e.target !== canvas || mDraft) return;
+  const c = cursorXY(e); let hit = null, bd = 10;
+  for (const q of endpoints()) { const s = toScreen(q.P); if (!s.ok) continue; const d = Math.hypot(s.x - c.x, s.y - c.y); if (d < bd) { bd = d; hit = { m: q.m, end: q.end, W: q.P.clone() }; } }
+  if (!hit) return;
+  e.stopPropagation(); e.preventDefault();
+  mDrag = { ...hit, x: e.clientX, y: e.clientY, moved: false }; controls.enabled = false; selectMeasure(hit.m);
+}, true);
+window.addEventListener('pointermove', e => {
+  if (!mDrag) return;
+  if (!mDrag.moved && Math.hypot(e.clientX - mDrag.x, e.clientY - mDrag.y) > 4) { mDrag.moved = true; const m = mDrag.m, g = measureGeom(m); if (m.axis !== 'free' && g) { m.b = ptFromWorld(g.C, m.a.layerId); m.axis = 'free'; } }
+  if (mDrag.moved) dragQ = e;
+});
+window.addEventListener('pointerup', () => {
+  if (!mDrag) return; const d = mDrag; mDrag = null; dragQ = null; controls.enabled = true; setGuides(null);
+  if (d.moved) { renderMeasures(); save(); commit('mover punta de medida'); }
+  else { const pt = ptFromWorld(d.W, (d.end === 'a' ? d.m.a : d.m.b).layerId); if (pt) { mDraft = pt; updateDbar(); $('dbarT').textContent = 'Marca el segundo punto'; } }
+});
+function processDrag() {
+  if (!mDrag || !dragQ) return; const e = dragQ; dragQ = null; const m = mDrag.m, other = worldOf(mDrag.end === 'a' ? m.b : m.a); if (!other) return;
+  const t = measureTarget(e, other, { m, end: mDrag.end }); if (!t) return;
+  const pt = ptFromWorld(t.W, t.layerId || m[mDrag.end].layerId); if (!pt) return;
+  m[mDrag.end] = pt; setGuides(other, AXES[t.snap] ? t.snap : null); showTarget({ ...t, normal: null }); updateMeasureValues();
+}
+sqVis = makeDot(refMat, 6); sqVis.visible = false;
+
+let down = null, lastMove = null, lastHover = 0, hoverGap = 45;
+canvas.addEventListener('pointerdown', e => {
+  const usedTc = tcPress; tcPress = false;
+  if (e.button !== 0) return;
+  down = { x: e.clientX, y: e.clientY, tc: usedTc };
+  if (mode === 'erase' && layers.length) { painting = true; stroke = new Map(); controls.enabled = false; paintAt(e); }
+});
+canvas.addEventListener('pointermove', e => { lastMove = e; if (painting) paintAt(e); });
+canvas.addEventListener('pointerleave', () => { if (!painting && !mDrag) { ring.visible = false; hover.visible = false; measRing.visible = false; } lastMove = null; });
+window.addEventListener('pointerup', e => {
+  if (painting) { endPaint(); down = null; return; }
+  if (!down || e.target !== canvas) { down = null; return; }
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), usedTc = down.tc; down = null;
+  if (moved > 6 || usedTc || gizDrag()) return; onClick(e);
+});
+let paintQ = null;
+function paintAt(e) { paintQ = e; }
+function processPaint() {
+  if (!paintQ) return; const e = paintQ; paintQ = null;
+  const r = pick(e, L => !$('eraseSel').checked || L === sel); if (!r) return;
+  showRing(r); if (painting) eraseAt(r.L, r.h.point);
+}
+function showRing(r) {
+  const n = r.h.face.normal.clone().transformDirection(r.h.object.matrixWorld);
+  ring.position.copy(r.h.point).addScaledVector(n, 0.01); ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n); ring.scale.setScalar(brushR()); ring.visible = true;
+}
+function onClick(e) {
+  if (mode === 'move' || mode === 'rotate') { const r = pick(e); if (r && r.L !== sel) select(r.L); return; }
+  if (mode === 'measure') {
+    const A = mDraft ? worldOf(mDraft) : null, t = measureTarget(e, A); if (!t) return;
+    const pt = ptFromWorld(t.W, t.layerId || (mDraft && mDraft.layerId)); if (!pt) return;
+    if (!mDraft) { mDraft = pt; updateDbar(); $('dbarT').textContent = 'Marca el segundo punto'; }
+    else { if (t.W.distanceTo(A) < 0.005) return; addMeasure(mDraft, pt, 'free'); clearDraft(); }
+    return; }
+  if (mode === 'align') {
+    if (!sel) { toast('Selecciona primero en Capas la capa que vas a mover.'); return; }
+    if (layers.filter(L => L.visible).length < 2) { toast('Necesitas al menos dos capas visibles para alinear.'); return; }
+    if (!pendMov) { const r = pick(e, L => L === sel); if (!r) { toast(`El primer punto va sobre la capa seleccionada, "${sel.name}".`); return; }
+      pendMov = r.pt; pendVis = { dm: makeDot(movMat, 6), lm: label('pl m') }; pendVis.lm.textContent = String(pairs.length + 1); }
+    else { const r = pick(e, L => L !== sel); if (!r) { toast('Ahora marca el mismo punto en otra capa.'); return; }
+      helpers.remove(pendVis.dm); pendVis.lm.remove(); pendVis = null; addPair(pendMov, r.pt); pendMov = null; }
+    updateAlignUI(); return;
+  }
+  if (mode === 'square') { const r = pick(e); if (!r) return;
+    if (!sqA) { sqA = r.h.point.clone(); sqVis.visible = true; } else { const A = sqA; sqA = null; sqVis.visible = false; squareScene(A, r.h.point.clone()); } }
+}
+window.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return; clearDraft(); sqA = null; sqVis.visible = false;
+  if (pendVis) { helpers.remove(pendVis.dm); pendVis.lm.remove(); pendVis = null; pendMov = null; updateAlignUI(); }
+});
+function processHover() {
+  if (!lastMove || painting || (mode === 'move' || mode === 'rotate')) return;
+  const now = performance.now(); if (now - lastHover < hoverGap) return; lastHover = now;
+  if (mode === 'erase') { const r = pick(lastMove, L => !$('eraseSel').checked || L === sel); hoverGap = Math.max(45, (performance.now() - now) * 3); if (r) showRing(r); else ring.visible = false; return; }
+  if (mode === 'measure') {
+    if (mDrag) return;
+    const A = mDraft ? worldOf(mDraft) : null, t = measureTarget(lastMove, A); hoverGap = Math.max(45, (performance.now() - now) * 3);
+    showTarget(t); canvas.style.cursor = !A && t && t.snap === 'punta' ? 'grab' : '';
+    if (A) {
+      setGuides(A, t && AXES[t.snap] ? t.snap : null);
+      if (t) { setLine(draftLine, A, t.W); draftLine.visible = true; draftLbl.hidden = false; draftLbl.textContent = fmtLen(A.distanceTo(t.W)); draftLbl._p = A.clone().add(t.W).multiplyScalar(0.5); }
+      $('dbarT').textContent = t && t.snap ? 'Segundo punto · ' + AXTXT[t.snap] : 'Marca el segundo punto';
+    } else $('hint').textContent = t && t.snap === 'punta' ? 'Arrastra la punta para moverla · clic para medir desde ella' : HINTS.measure;
+    return;
+  }
+  const filt = mode === 'align' ? (pendMov ? (L => L !== sel) : (L => L === sel)) : null;
+  const r = pick(lastMove, filt); hoverGap = Math.max(45, (performance.now() - now) * 3); hover.visible = !!r; if (!r) return;
+  hover.position.copy(r.h.point);
+}
+
+// ---------- Vistas ----------
+const VIEWS = {
+  planta: { dir: [0, 1, 0], up: [0, 0, -1], w: 'x', h: 'z', label: 'Planta' },
+  frente: { dir: [0, 0, 1], up: [0, 1, 0], w: 'x', h: 'y', label: 'Elevación frente' },
+  atras: { dir: [0, 0, -1], up: [0, 1, 0], w: 'x', h: 'y', label: 'Elevación atrás' },
+  izquierda: { dir: [-1, 0, 0], up: [0, 1, 0], w: 'z', h: 'y', label: 'Elevación izquierda' },
+  derecha: { dir: [1, 0, 0], up: [0, 1, 0], w: 'z', h: 'y', label: 'Elevación derecha' },
+  '3d': { label: 'Vista 3D' }
+};
+function setView(v, keep = false) {
+  view = v; document.querySelectorAll('.views button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
+  const bb = sceneBox(); const c = bb.isEmpty() ? new THREE.Vector3() : bb.getCenter(new THREE.Vector3()), s = bb.isEmpty() ? new THREE.Vector3(10, 4, 10) : bb.getSize(new THREE.Vector3());
+  const diag = Math.max(1, s.length());
+  if (v === '3d') {
+    camera = persp; if (!keep) { const r = diag / 2 / Math.sin(persp.fov * Math.PI / 360) * 0.95; persp.position.copy(c).add(new THREE.Vector3(1, 0.75, 1).normalize().multiplyScalar(r)); }
+    persp.up.set(0, 1, 0); controls.enableRotate = true;
+  } else {
+    const V = VIEWS[v], a = stage.clientWidth / Math.max(1, stage.clientHeight);
+    camera = ortho; orthoH = Math.max(s[V.h], s[V.w] / a) * 1.12; ortho.zoom = 1; updateOrtho();
+    ortho.up.set(...V.up); ortho.position.copy(c).add(new THREE.Vector3(...V.dir).multiplyScalar(diag * 2 + 5)); ortho.near = 0.01; ortho.far = diag * 5 + 50; ortho.updateProjectionMatrix();
+    controls.enableRotate = false;
+  }
+  controls.object = camera; tc.camera = camera; tr.camera = camera; controls.target.copy(c); camera.lookAt(c); controls.update();
+  $('scalebar').hidden = v === '3d'; setMode(mode);
+}
+document.querySelectorAll('.views button').forEach(b => b.addEventListener('click', () => { setView(b.dataset.view); $('vw').open = false; }));
+// ---------- Marco de la página: panel de capas, cajón "Más" y botones redondos ----------
+function setMore(open, focusId) { $('more').hidden = !open; $('btnMore').setAttribute('aria-expanded', String(open)); if (open && focusId) { const c = $(focusId); if (c && c.scrollIntoView) c.scrollIntoView({ block: 'start' }); } }
+$('btnMore').addEventListener('click', () => setMore($('more').hidden));
+$('btnMoreX').addEventListener('click', () => setMore(false));
+$('btnExport').addEventListener('click', () => setMore(true, 'cardExport'));
+function setLeft(open) { $('left').classList.toggle('off', !open); $('btnLayers').hidden = open; try { localStorage.setItem('escena-lidar-left', open ? '1' : '0'); } catch (e) {} }
+$('btnCollapse').addEventListener('click', () => setLeft(false));
+$('btnLayers').addEventListener('click', () => setLeft(true));
+{ let open = window.innerWidth > 760; try { const v = localStorage.getItem('escena-lidar-left'); if (v !== null && window.innerWidth > 760) open = v === '1'; } catch (e) {} setLeft(open); }
+$('rbGrid').addEventListener('click', () => { showGrid = !showGrid; if (grid) grid.visible = showGrid; $('rbGrid').setAttribute('aria-pressed', String(showGrid)); });
+$('rbTint').addEventListener('click', () => $('tint').click());
+$('rbShot').addEventListener('click', () => $('btnPng').click());
+// Semitransparente: solo cambia cómo se ve; no selecciona, no mueve y no entra al historial.
+function renderGhost() {
+  const box = $('ghList'); box.innerHTML = '';
+  for (const L of layers) { const b = document.createElement('button'); b.type = 'button';
+    b.textContent = L.src === FIX_SRC ? subName(L) : L.name; b.title = L.name; b.setAttribute('aria-pressed', String(!!L.ghost));
+    b.addEventListener('click', () => { L.ghost = !L.ghost; applyTint(L); renderGhost(); }); box.appendChild(b); }
+  $('rbGhost').setAttribute('aria-pressed', String(layers.some(L => L.ghost)));
+}
+$('gh').addEventListener('toggle', () => { if ($('gh').open) { $('vw').open = false; renderGhost(); } });
+$('vw').addEventListener('toggle', () => { if ($('vw').open) $('gh').open = false; });
+$('ghNone').addEventListener('click', () => { for (const L of layers) if (L.ghost) { L.ghost = false; applyTint(L); } renderGhost(); $('gh').open = false; });
+$('btnReload').addEventListener('click', () => { const miss = LIB.filter(x => !layers.some(L => L.src === x.name)); if (!miss.length) { toast('No falta ninguna capa de las 4 cámaras.'); return; } setMore(false); loadLibItems(miss); });
+window.addEventListener('keydown', e => { if (e.key === 'Escape') { setMore(false); $('vw').open = false; } });
+// Las herramientas del cajón se usan en el visor: al elegir una, el cajón se cierra en pantallas angostas.
+document.querySelectorAll('.more [data-mode]').forEach(b => b.addEventListener('click', () => { if (window.innerWidth < 1100) setMore(false); }));
+function scaleBarSpec(widthPx) {
+  const mpp = (camera.top - camera.bottom) / camera.zoom / (stage.clientHeight || 1), len = SceneMath.niceStep(mpp * widthPx * 0.16);
+  return { len, px: len / mpp };
+}
+function rebuildGrid() {
+  if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
+  const bb = sceneBox(); const s = bb.isEmpty() ? 20 : Math.ceil(Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) + 6);
+  const n = Math.min(400, Math.max(10, s)), line = new THREE.Color(css('--grid-b') || '#dcd8d1'), muted = new THREE.Color(css('--grid-a') || '#b9b5ae');
+  grid = new THREE.GridHelper(n, n, muted, line); grid.material.transparent = true; grid.material.opacity = 0.55; grid.material.depthWrite = false; grid.renderOrder = -1;
+  if (!bb.isEmpty()) grid.position.set(Math.round((bb.min.x + bb.max.x) / 2), 0, Math.round((bb.min.z + bb.max.z) / 2));
+  grid.visible = showGrid; scene.add(grid);
+}
+
+// ---------- Bucle ----------
+const tmpV = new THREE.Vector3();
+function frame() {
+  requestAnimationFrame(frame);
+  controls.update(); processPaint(); processHover(); processDrag();
+  const show = $('showM').checked;
+  for (const d of helpers.children) if (d.userData.px) d.scale.setScalar(pxWorld(d.position, d.userData.px));
+  for (const m of measures) {
+    const g = measureGeom(m); const vis = show && !!g; m.line.visible = m.faint.visible = m.da.visible = m.db.visible = vis; m.el.hidden = !vis; if (!vis) continue;
+    setLine(m.line, g.A, g.C); setLine(m.faint, g.C, g.B); m.faint.visible = g.B.distanceToSquared(g.C) > 1e-6;
+    m.da.position.copy(g.A); m.db.position.copy(g.C); m.da.scale.setScalar(pxWorld(g.A, 6)); m.db.scale.setScalar(pxWorld(g.C, 6));
+    const s = toScreen(tmpV.copy(g.A).add(g.C).multiplyScalar(0.5)); m.el.hidden = !s.ok; m.el.style.left = s.x + 'px'; m.el.style.top = s.y + 'px';
+    const isSel = m === selM; m.el.textContent = fmtLen(g.d); m.el.title = m.name; m.el.classList.toggle('sel', isSel);
+    m.line.material = isSel ? lineMat : lineOther; m.da.material = m.db.material = isSel ? dotMat : dotOther;
+  }
+  if (mDraft && mode === 'measure' && !draftLbl.hidden && draftLbl._p) { const s = toScreen(draftLbl._p); draftLbl.style.left = s.x + 'px'; draftLbl.style.top = s.y + 'px'; }
+  pairs.forEach((p, i) => { const v = pairVis[i], A = worldOf(p.mov), B = worldOf(p.ref); if (!A || !B) return;
+    v.dm.position.copy(A); v.dr.position.copy(B); setLine(v.ln, A, B);
+    const sa = toScreen(A), sb = toScreen(B); v.lm.style.left = sa.x + 'px'; v.lm.style.top = sa.y + 'px'; v.lr.style.left = sb.x + 'px'; v.lr.style.top = sb.y + 'px'; });
+  if (pendVis && pendMov) { const A = worldOf(pendMov); if (A) { pendVis.dm.position.copy(A); const s = toScreen(A); pendVis.lm.style.left = s.x + 'px'; pendVis.lm.style.top = s.y + 'px'; } }
+  if (sqA) sqVis.position.copy(sqA);
+  if (camera.isOrthographicCamera) { const sb = scaleBarSpec(stage.clientWidth); $('sbBar').style.width = sb.px + 'px'; $('sbTxt').textContent = fmtLen(sb.len).replace(/,0+ /, ' '); }
+  if (selBox && gizDrag()) selBox.update();
+  renderer.render(scene, camera);
+}
+
+// ---------- Carga de archivos ----------
+function readFile(f) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsArrayBuffer(f); }); }
+function parseGltf(buf, urlMap) {
+  return new Promise((res, rej) => {
+    const mgr = new THREE.LoadingManager(); const missing = [];
+    mgr.setURLModifier(url => { if (/^(data|blob):/.test(url)) return url; const base = decodeURIComponent(url.split(/[\\/]/).pop().split('?')[0]); if (urlMap && urlMap[base]) return urlMap[base]; missing.push(base); return url; });
+    new THREE.GLTFLoader(mgr).parse(buf, '', g => res(g), err => rej(new Error((missing.length ? 'Faltan archivos: ' + missing.join(', ') + '. ' : '') + (err && err.message || ''))));
+  });
+}
+async function loadFiles(list) {
+  const files = [...list]; if (!files.length) return;
+  const models = files.filter(f => /\.(glb|gltf)$/i.test(f.name));
+  if (!models.length) { toast('No encontré archivos .glb o .gltf entre los seleccionados.'); return; }
+  const urlMap = {}; for (const f of files) if (!/\.(glb|gltf)$/i.test(f.name)) urlMap[f.name] = URL.createObjectURL(f);
+  let ok = 0, rest = 0; libBusy = true;
+  try { for (const f of models) {
+    overlay('Cargando ' + f.name + '…', 'Leyendo la malla y sus texturas.');
+    try { const buf = await readFile(f); const g = await parseGltf(buf, urlMap); const rs = addGltf(f.name, g);
+      if (!rs.length) toast(`"${f.name}" no tiene mallas (puede ser una nube de puntos o un splat).`); else { ok++; if (rs.some(r => r.restored)) rest++; } }
+    catch (err) { toast(`No se pudo leer "${f.name}". ${err.message}`, 6000); }
+  } } finally { libBusy = false; renderLib(); }
+  overlay(null); commit('agregar capas');
+  if (!layers.length) overlay('Agrega tus escaneos', 'Carga los GLB o GLTF de cada cara de la cámara exportados desde Polycam.', true);
+  if (ok) { setView(view); toast(`${ok} ${ok === 1 ? 'capa agregada' : 'capas agregadas'}` + (rest ? `; ${rest} con la posición y borrados que tenías guardados` : '') + '.'); }
+}
+$('file').addEventListener('change', e => { loadFiles(e.target.files); e.target.value = ''; });
+$('file2').addEventListener('change', e => { loadFiles(e.target.files); e.target.value = ''; });
+let dragN = 0;
+stage.addEventListener('dragenter', e => { e.preventDefault(); dragN++; $('drop').hidden = false; });
+stage.addEventListener('dragover', e => e.preventDefault());
+stage.addEventListener('dragleave', () => { if (--dragN <= 0) { dragN = 0; $('drop').hidden = true; } });
+stage.addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('drop').hidden = true; if (e.dataTransfer && e.dataTransfer.files) loadFiles(e.dataTransfer.files); });
+
+// ---------- Historial universal (Deshacer / Rehacer) ----------
+let hist = [], hi = -1, restoring = false; const trash = [], HMAX = 80;
+const measSnap = () => measures.map(m => ({ id: m.id, name: m.name, axis: m.axis, a: [m.a.layerId, ...m.a.local.toArray()], b: [m.b.layerId, ...m.b.local.toArray()] }));
+function snap(label) {
+  return { label, meas: measSnap(), layers: layers.map(L => ({ id: L.id, vis: L.visible,
+    m: L.group.matrix.compose(L.group.position, L.group.quaternion, L.group.scale).toArray(), er: L.meshes.map(m => SceneMath.rle(m.rem).join(',')) })) };
+}
+const sig = s => JSON.stringify([s.layers, s.meas]);
+function commit(label = 'cambio') {
+  if (restoring || applying || libBusy) return;
+  const s = snap(label); if (hi >= 0 && sig(hist[hi]) === sig(s)) return;
+  hist.length = hi + 1; hist.push(s); while (hist.length > HMAX) hist.shift(); hi = hist.length - 1; purgeTrash(); updateHistUI();
+}
+function resetHistory() { if (libBusy) return; hist = [snap('inicio')]; hi = 0; purgeTrash(); updateHistUI(); }
+function purgeTrash() {
+  const used = new Set(); for (const s of hist) for (const x of s.layers) used.add(x.id);
+  for (let i = trash.length - 1; i >= 0; i--) if (!used.has(trash[i].id)) { disposeLayer(trash[i]); trash.splice(i, 1); }
+}
+function updateHistUI() {
+  const u = $('btnUndo'), r = $('btnRedo'); u.disabled = hi <= 0; r.disabled = hi >= hist.length - 1;
+  u.title = hi > 0 ? `Deshacer: ${hist[hi].label} (Ctrl+Z)` : 'Nada que deshacer'; r.title = hi < hist.length - 1 ? `Rehacer: ${hist[hi + 1].label} (Ctrl+Shift+Z)` : 'Nada que rehacer';
+}
+function restoreSnap(s) {
+  restoring = true; tc.detach(); tr.detach();
+  const ids = s.layers.map(x => x.id);
+  for (const L of [...layers]) if (!ids.includes(L.id)) { scene.remove(L.group); layers.splice(layers.indexOf(L), 1); trash.push(L); }
+  for (const x of s.layers) { const t = trash.findIndex(L => L.id === x.id); if (t >= 0) { const L = trash.splice(t, 1)[0]; scene.add(L.group); layers.push(L); } }
+  layers.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  for (const x of s.layers) { const L = layerById(x.id); if (!L) continue;
+    new THREE.Matrix4().fromArray(x.m).decompose(L.group.position, L.group.quaternion, L.group.scale); L.group.updateMatrixWorld(true);
+    L.visible = x.vis; L.group.visible = x.vis;
+    L.meshes.forEach((m, i) => { if (SceneMath.rle(m.rem).join(',') !== x.er[i]) { m.rem = SceneMath.unrle(x.er[i] ? x.er[i].split(',').map(Number) : [], m.rem.length); applyIdx(m); } }); }
+  if (JSON.stringify(measSnap()) !== JSON.stringify(s.meas)) {
+    while (measures.length) dropMeasure(measures[0]);
+    for (const q of s.meas) addMeasure({ layerId: q.a[0], local: new THREE.Vector3(q.a[1], q.a[2], q.a[3]) }, { layerId: q.b[0], local: new THREE.Vector3(q.b[1], q.b[2], q.b[3]) }, q.axis, q.name, q.id);
+  }
+  restoring = false;
+  const keep = sel && layers.includes(sel) ? sel : layers[layers.length - 1] || null; sel = null; select(keep);
+  renderMeasures(); updateEraseUI(); rebuildGrid(); updateMeasureValues(); updateFixUI(); save();
+  if (layers.length) overlay(null); else overlay(`${curScene}: sin capas`, 'Carga las cámaras guardadas en la página, o agrega tus GLB.', true);
+}
+function undo() { if (mDraft) { clearDraft(); return; } if (hi <= 0 || gizDrag() || painting || libBusy) return; const lbl = hist[hi].label; hi--; restoreSnap(hist[hi]); updateHistUI(); toast('Deshecho: ' + lbl, 2200); }
+function redo() { if (hi >= hist.length - 1 || gizDrag() || painting || libBusy) return; hi++; restoreSnap(hist[hi]); updateHistUI(); toast('Rehecho: ' + hist[hi].label, 2200); }
+$('btnUndo').addEventListener('click', undo);
+$('btnRedo').addEventListener('click', redo);
+window.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+});
+
+// ---------- Proyecto: guardar / restaurar ----------
+function projectState() {
+  return {
+    app: 'escena-lidar', version: 1, rev: REV, libSeen: LIB.map(x => x.name), name: curScene, units,
+    layers: layers.map(L => ({ name: L.name, src: L.src, tris: L.tris, visible: L.visible, position: L.group.position.toArray(), quaternion: L.group.quaternion.toArray(), scale: L.group.scale.x,
+      erased: L.meshes.map(m => SceneMath.rle(m.rem)) })),
+    measures: measures.map(m => ({ name: m.name, axis: m.axis, a: { layer: layerById(m.a.layerId).name, p: m.a.local.toArray() }, b: { layer: layerById(m.b.layerId).name, p: m.b.local.toArray() } }))
+      .concat(pendingMeasures.map(({ _done, ...r }) => r))
+  };
+}
+const keyOf = n => 'escena-lidar-v1:' + n;
+function readSaved(n) { try { return JSON.parse(localStorage.getItem(keyOf(n)) || 'null'); } catch (e) { return null; } }
+// Antes había una escena por cámara; ahora es una sola. Lo guardado en "Cámara 1" pasa a la escena única.
+try { const nk = keyOf($('sceneName').value), old = localStorage.getItem(keyOf('Cámara 1')); if (old && !localStorage.getItem(nk)) localStorage.setItem(nk, old); } catch (e) {}
+let curScene = $('sceneName').value;
+try { const last = localStorage.getItem('escena-lidar-last'); if (last && [...$('sceneName').options].some(o => o.value === last)) { $('sceneName').value = last; curScene = last; } } catch (e) {}
+let saved = readSaved(curScene), saveT = 0, applying = false;
+if (saved && saved.units) { units = saved.units; $('units').value = units; }
+function writeSave() { clearTimeout(saveT); saveT = 0; try { localStorage.setItem(keyOf(curScene), JSON.stringify(projectState())); } catch (e) {} }
+function save() { if (applying) return; clearTimeout(saveT); saveT = setTimeout(writeSave, 400); }
+async function autoLoad() {
+  const names = saved && saved.layers ? [...new Set(saved.layers.map(s => s.src || s.name))] : [];
+  // La escena son siempre las 4 cámaras: se carga todo lo guardado en la página, sin depender de lo que quedó registrado la vez anterior.
+  const items = LIB.slice();
+  if (!items.length) { overlay(`${curScene}: sin capas`, 'Carga las cámaras guardadas en la página, o agrega tus GLB.', true); }
+  else await loadLibItems(items);
+  const miss = names.filter(n => !LIB.some(x => x.name === n));
+  if (miss.length) toast(`Para completar ${curScene} carga también: ${miss.join(', ')}`, 7000);
+}
+$('sceneName').addEventListener('change', async () => {
+  if (libBusy) { $('sceneName').value = curScene; toast('Espera a que termine la carga actual.'); return; }
+  if (saveT) writeSave();
+  curScene = $('sceneName').value; try { localStorage.setItem('escena-lidar-last', curScene); } catch (e) {}
+  applying = true; clearAlign(); while (layers.length) removeLayer(layers[0], true); while (measures.length) dropMeasure(measures[0]);
+  pendingMeasures = []; strokesAll.length = 0; while (trash.length) disposeLayer(trash.pop()); applying = false;
+  saved = readSaved(curScene); if (saved && saved.units) { units = saved.units; $('units').value = units; }
+  renderLayers(); renderMeasures(); syncInputs(); updateEraseUI(); rebuildGrid(); resetHistory();
+  await autoLoad(); resetHistory();
+});
+function restoreLayer(L) {
+  if (LIB.some(x => x.name === L.src) && saved && saved.rev !== REV) return false;   // la escena guardada cambió: no aplicar posiciones de una versión anterior
+  if (!saved || !saved.layers) return false; const s = saved.layers.find(x => x.name === L.name); if (!s) return false;
+  L.group.position.fromArray(s.position); L.group.quaternion.fromArray(s.quaternion); L.group.scale.setScalar(s.scale || 1); L.group.updateMatrixWorld(true);
+  L.visible = s.visible !== false; L.group.visible = L.visible;
+  if (s.tris === L.tris && s.erased) L.meshes.forEach((m, i) => { if (s.erased[i] && s.erased[i].length) { m.rem = SceneMath.unrle(s.erased[i], m.rem.length); applyIdx(m); } });
+  if (saved.measures) for (const pm of saved.measures) if (!pm._done && (pm.a.layer === L.name || pm.b.layer === L.name) && !pendingMeasures.includes(pm)) pendingMeasures.push(pm);
+  return true;
+}
+function restorePendingMeasures() {
+  applying = true;
+  for (let i = pendingMeasures.length - 1; i >= 0; i--) {
+    const pm = pendingMeasures[i], A = layers.find(L => L.name === pm.a.layer), B = layers.find(L => L.name === pm.b.layer); if (!A || !B) continue;
+    pendingMeasures.splice(i, 1); pm._done = true;
+    addMeasure({ layerId: A.id, local: new THREE.Vector3().fromArray(pm.a.p) }, { layerId: B.id, local: new THREE.Vector3().fromArray(pm.b.p) }, pm.axis || 'free', pm.name);
+  }
+  applying = false; renderMeasures();
+}
+$('btnSave').addEventListener('click', () => offer(`${fileBase()} - proyecto.json`, JSON.stringify(projectState(), null, 1)));
+$('projFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const st = JSON.parse(await f.text()); if (st.app !== 'escena-lidar') throw new Error('No es un proyecto de Escena LiDAR.');
+    saved = st; if (st.units) { units = st.units; $('units').value = units; }
+    while (measures.length) dropMeasure(measures[0]); pendingMeasures = [];
+    let n = 0; for (const L of layers) if (restoreLayer(L)) n++;
+    restorePendingMeasures(); renderLayers(); syncInputs(); updateEraseUI(); rebuildGrid(); setView(view); save(); commit('abrir proyecto');
+    const miss = (st.layers || []).filter(s => !layers.some(L => L.name === s.name)).map(s => s.name);
+    toast(`Proyecto aplicado a ${n} ${n === 1 ? 'capa' : 'capas'}.` + (miss.length ? ` Carga también: ${miss.join(', ')}.` : ''), 6000);
+  } catch (err) { toast('No se pudo abrir el proyecto. ' + err.message, 5000); }
+});
+$('units').addEventListener('change', () => { units = $('units').value; updateMeasureValues(); save(); });
+$('axis').addEventListener('change', clearDraft);
+
+// ---------- Exportar ----------
+let dl;
+async function offer(filename, data) {
+  try {
+    if (dl === undefined) dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (!dl) {   // fuera de claude.ai (por ejemplo GitHub Pages): descarga normal del navegador
+      const blob = data instanceof Blob ? data : new Blob([data]); const u = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
+      toast('Archivo listo: ' + filename); return true; }
+    await dl.save({ filename, data }); toast('Archivo listo: ' + filename); return true;
+  } catch (err) { if (err && err.code === 'declined') toast('Descarga cancelada.'); else toast('No se pudo guardar el archivo (' + (err && (err.code || err.message) || 'error') + ').', 5000); return false; }
+}
+const fileBase = () => ($('sceneName').value.trim() || 'Escena LiDAR').replace(/[\\/:*?"<>|]+/g, '-');
+const toBlob = c => new Promise(r => c.toBlob(r, 'image/png'));
+async function compose(title) {
+  const w = stage.clientWidth, h = stage.clientHeight, S = 2, bg = scene.background;
+  const hid = [tc, tr, hover, ring, draftLine, measRing, ...(selBox ? [selBox] : [])].map(o => [o, o.visible]); hid.forEach(([o]) => o.visible = false);
+  scene.background = new THREE.Color('#ffffff'); renderer.setPixelRatio(S); renderer.setSize(w, h, false);
+  for (const d of helpers.children) if (d.userData.px) d.scale.setScalar(pxWorld(d.position, d.userData.px));
+  renderer.render(scene, camera);
+  const list = measures.map((m, i) => ({ i: i + 1, m, g: measureGeom(m) })).filter(x => x.g);
+  const HD = 64 * S, cols = w > 900 ? 3 : 2, rows = Math.ceil(list.length / cols), FT = list.length ? (22 + rows * 20) * S : 0;
+  const c = document.createElement('canvas'); c.width = w * S; c.height = h * S + HD + FT; const g = c.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(canvas, 0, HD);
+  g.fillStyle = '#1c1d22'; g.textBaseline = 'middle';
+  g.font = `600 ${18 * S}px "IBM Plex Sans", sans-serif`; g.fillText($('sceneName').value || 'Escena LiDAR', 16 * S, 24 * S);
+  g.font = `400 ${13 * S}px "IBM Plex Sans", sans-serif`; g.fillStyle = '#67646e'; g.fillText(title + ' · unidades: ' + units + ' · levantamiento LiDAR (Polycam), precisión del orden de 1 a 3 cm', 16 * S, 46 * S);
+  g.textAlign = 'right'; g.fillText(new Date().toLocaleDateString('es-CL'), c.width - 16 * S, 24 * S); g.textAlign = 'left';
+  g.strokeStyle = '#d9d5d0'; g.lineWidth = S; g.beginPath(); g.moveTo(0, HD - S / 2); g.lineTo(c.width, HD - S / 2); g.stroke();
+  if ($('showM').checked) for (const x of list) { const s = toScreen(x.g.A.clone().add(x.g.C).multiplyScalar(0.5)); if (!s.ok) continue;
+    const t = `${x.i} · ${fmtLen(x.g.d)}`; g.font = `500 ${12 * S}px "IBM Plex Mono", monospace`; const tw = g.measureText(t).width + 12 * S, th = 20 * S, X = s.x * S - tw / 2, Y = HD + s.y * S - th / 2;
+    g.fillStyle = '#ffffff'; g.strokeStyle = '#4b3cf0'; g.lineWidth = 1.5 * S; g.beginPath(); g.rect(X, Y, tw, th); g.fill(); g.stroke(); g.fillStyle = '#1c1d22'; g.fillText(t, X + 6 * S, Y + th / 2); }
+  if (camera.isOrthographicCamera) { const sb = scaleBarSpec(w), x0 = 16 * S, y0 = HD + h * S - 22 * S, L = sb.px * S;
+    g.fillStyle = '#1c1d22'; g.fillRect(x0, y0, L / 2, 6 * S); g.strokeStyle = '#1c1d22'; g.lineWidth = 1.5 * S; g.strokeRect(x0, y0, L, 6 * S);
+    g.font = `500 ${11 * S}px "IBM Plex Mono", monospace`; g.fillText('0', x0, y0 - 8 * S); g.textAlign = 'right'; g.fillText(fmtLen(sb.len).replace(/,0+ /, ' '), x0 + L, y0 - 8 * S); g.textAlign = 'left'; }
+  if (list.length) { const y0 = h * S + HD; g.fillStyle = '#67646e'; g.font = `600 ${11 * S}px "IBM Plex Sans", sans-serif`; g.fillText('COTAS', 16 * S, y0 + 12 * S);
+    const cw = (c.width - 32 * S) / cols; list.forEach((x, k) => { const col = k % cols, row = (k / cols) | 0;
+      g.fillStyle = '#1c1d22'; g.font = `400 ${12 * S}px "IBM Plex Sans", sans-serif`; g.fillText(`${x.i}. ${x.m.name} (${AXN[x.m.axis]}): ${fmtLen(x.g.d)}`, 16 * S + col * cw, y0 + (30 + row * 20) * S); }); }
+  scene.background = bg; hid.forEach(([o, v]) => o.visible = v); renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); resize(); renderer.render(scene, camera);
+  return toBlob(c);
+}
+function csv() {
+  const rows = [['N°', 'Nombre', 'Tipo', `Valor (${units})`, 'ΔX (mm)', 'ΔY alto (mm)', 'ΔZ (mm)', 'Capa A', 'Capa B']];
+  measures.forEach((m, i) => { const g = measureGeom(m); if (!g) return; const k = units === 'mm' ? 1000 : units === 'cm' ? 100 : 1;
+    rows.push([i + 1, m.name, AXN[m.axis], (g.d * k).toFixed(units === 'mm' ? 0 : units === 'cm' ? 1 : 3), (g.dx * 1000).toFixed(0), (g.dy * 1000).toFixed(0), (g.dz * 1000).toFixed(0), layerById(m.a.layerId).name, layerById(m.b.layerId).name]); });
+  return '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+}
+function busy(btn, on, txt) { btn.disabled = on; if (on) { btn.dataset.t = btn.textContent; btn.textContent = txt; } else if (btn.dataset.t) btn.textContent = btn.dataset.t; }
+$('btnPng').addEventListener('click', async () => {
+  if (!layers.length) { toast('Agrega al menos una capa.'); return; }
+  const b = $('btnPng'); busy(b, true, 'Generando…');
+  try { const blob = await compose(VIEWS[view].label); await offer(`${fileBase()} - ${VIEWS[view].label}.png`, blob); } finally { busy(b, false); }
+});
+$('btnViews').addEventListener('click', async () => {
+  if (!layers.length) { toast('Agrega al menos una capa.'); return; }
+  const b = $('btnViews'); busy(b, true, 'Generando 5 láminas…'); const prev = view, files = [];
+  try {
+    let k = 1; for (const v of ['planta', 'frente', 'atras', 'izquierda', 'derecha']) { setView(v); controls.update(); const blob = await compose(VIEWS[v].label); files.push({ name: `${k++} ${VIEWS[v].label}.png`, data: new Uint8Array(await blob.arrayBuffer()) }); }
+    if (measures.length) files.push({ name: 'medidas.csv', data: csv() });
+    files.push({ name: 'proyecto.json', data: JSON.stringify(projectState(), null, 1) });
+    setView(prev); await offer(`${fileBase()} - vistas.zip`, new Blob(SceneMath.zip(files), { type: 'application/zip' }));
+  } finally { setView(prev); busy(b, false); }
+});
+$('btnCsv').addEventListener('click', () => { if (!measures.length) { toast('Aún no hay medidas.'); return; } offer(`${fileBase()} - medidas.csv`, csv()); });
+$('btnGlb').addEventListener('click', () => {
+  const vis = layers.filter(L => L.visible); if (!vis.length) { toast('No hay capas visibles para exportar.'); return; }
+  if (!THREE.GLTFExporter) { toast('El exportador no cargó. Recarga la página.'); return; }
+  const b = $('btnGlb'); busy(b, true, 'Uniendo mallas…');
+  const tints = layers.map(L => L.meshes.map(m => m.obj.material.color.getHex())); for (const L of vis) for (const m of L.meshes) { m.obj.material.color.set(m.obj.material.map ? 0xffffff : 0xb9b4ad); }
+  setTimeout(() => {
+    try {
+      new THREE.GLTFExporter().parse(vis.map(L => L.group), async res => {
+        layers.forEach((L, i) => L.meshes.forEach((m, j) => m.obj.material.color.setHex(tints[i][j])));
+        const files = [{ name: `${fileBase()}.glb`, data: new Uint8Array(res) }, { name: 'proyecto.json', data: JSON.stringify(projectState(), null, 1) }];
+        if (measures.length) files.push({ name: 'medidas.csv', data: csv() });
+        await offer(`${fileBase()} - escena.zip`, new Blob(SceneMath.zip(files), { type: 'application/zip' })); busy(b, false);
+      }, { binary: true, onlyVisible: true });
+    } catch (err) { busy(b, false); toast('No se pudo exportar la escena. ' + (err.message || ''), 5000); }
+  }, 30);
+});
+
+// ---------- Inicio ----------
+applyTheme(); resize(); renderLayers(); renderMeasures(); syncInputs(); setMode('measure'); frame();
+resetHistory(); autoLoad().then(resetHistory);
+})();
+</script>
